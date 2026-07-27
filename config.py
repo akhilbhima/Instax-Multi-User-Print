@@ -25,6 +25,10 @@ AUTO_ROTATE_TO_FIT = True
 # InstaxBLE itself caps at 105 KB, we stay safely under that.
 MAX_IMAGE_KB = 100
 
+# Seconds between BLE data packets. The Wide silently discards prints when
+# packets arrive too fast (it still ACKs everything!); the Mini tolerates 50ms.
+PACKET_DELAY = {"mini": 0.05, "wide": 0.15}
+
 # --- Cloud mode (bridge.py) ---------------------------------------------------
 CLOUD_URL = "https://nm-photoprints.vercel.app"
 
@@ -43,7 +47,7 @@ RETRY_BACKOFF_SECONDS = [5, 15, 30]   # wait before attempt 2, 3, 4
 CONNECT_TIMEOUT_SECONDS = 30          # BLE scan timeout per attempt
 TRANSFER_TIMEOUT_SECONDS = 180        # max time for the image transfer
 TRANSFER_STALL_SECONDS = 20           # abort if no packet progress for this long
-POST_PRINT_WAIT_SECONDS = 20          # let the printer physically print/eject
+PRINT_COMPLETE_TIMEOUT_SECONDS = 120  # max wait for the printer to confirm the print
 
 # --- Film monitoring ----------------------------------------------------------
 FILM_RECHECK_SECONDS = 30       # while out of film, re-check the printer this often

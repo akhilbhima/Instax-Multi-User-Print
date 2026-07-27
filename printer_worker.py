@@ -28,6 +28,48 @@ log = logging.getLogger("instax")
 _ble_lock = threading.Lock()
 
 
+# PRINTER_FUNCTION_INFO result codes (byte layout from paorin/InstaxLink,
+# verified against this hardware on 2026-07-27)
+RESULT_NORMAL = 0
+RESULT_PRINTING = 127
+RESULT_ERROR = 240
+
+
+class PacedInstaxBLE(InstaxBLE):
+    """InstaxBLE with the pacing the printers actually require
+    (per the ESP32-Instax-Bridge protocol notes):
+    - a pause between data packets (Wide needs 150ms; Mini 50ms) — the stock
+      library blasts packets as fast as ACKs arrive, which the Wide ACKs
+      politely and then refuses to print;
+    - a 1s pause between the transfer END and the PRINT command.
+    Also decodes the full PRINTER_FUNCTION_INFO response (film nibble,
+    error flag, print result, error type) that the stock library ignores."""
+
+    packet_delay = 0.05
+    func_info = None   # last decoded PRINTER_FUNCTION_INFO
+
+    def handle_image_packet_queue(self):
+        if self.packetsForPrinting and not self.cancelled:
+            op = bytes(self.packetsForPrinting[0][4:6])
+            if op == b"\x10\x80":      # PRINT_IMAGE: required pre-execute pause
+                time.sleep(1.0)
+            elif op == b"\x10\x01":    # image data chunk: pace the transfer
+                time.sleep(self.packet_delay)
+        super().handle_image_packet_queue()
+
+    def notification_handler(self, packet):
+        b = bytes(packet)
+        if b[4:6] == b"\x00\x02" and len(b) >= 16 and b[7] == 2:
+            from struct import unpack_from
+            self.func_info = {
+                "film": b[8] & 15,
+                "error_flag": bool(b[9] & 4),
+                "result": b[10],
+                "err_type": unpack_from(">I", b, 12)[0],
+            }
+        super().notification_handler(packet)
+
+
 class PrintError(Exception):
     pass
 
@@ -343,7 +385,8 @@ class PrinterWorker(threading.Thread):
                 # Constructor may sys.exit() if Bluetooth is off — surface that
                 # as a normal error instead of killing the thread.
                 try:
-                    instax = InstaxBLE(device_name=self.device_name, verbose=False)
+                    instax = PacedInstaxBLE(device_name=self.device_name, verbose=False)
+                    instax.packet_delay = config.PACKET_DELAY.get(self.fmt, 0.05)
                 except SystemExit as e:
                     raise PrintError(f"Bluetooth unavailable: {e}")
                 if config.PRINT_ENABLED:
@@ -400,21 +443,43 @@ class PrinterWorker(threading.Thread):
                     raise PrintError("BLE connection dropped during transfer")
                 time.sleep(0.5)
 
-            log.info("[%s] transfer complete, waiting %ds for the print to eject",
-                     self.fmt, config.POST_PRINT_WAIT_SECONDS)
-            time.sleep(config.POST_PRINT_WAIT_SECONDS)
-
-            # Still connected: ask the printer for its REAL remaining-film
-            # count instead of guessing with a local decrement. If this fails
-            # the idle re-check corrects the display within a minute anyway.
-            try:
+            # Poll real print status: PRINTING -> NORMAL (+film decrement) is
+            # success; ERROR carries the printer's own error code (e.g. type 16
+            # = mechanical/no-film abort). Beats the old blind post-print wait.
+            log.info("[%s] transfer complete, waiting for the printer to finish",
+                     self.fmt)
+            pre_film = instax.photosLeft
+            saw_printing = False
+            deadline = time.time() + config.PRINT_COMPLETE_TIMEOUT_SECONDS
+            time.sleep(6)
+            while time.time() < deadline:
+                if not instax.peripheral.is_connected():
+                    # Some units drop BLE while the motor runs. If the print
+                    # had started, assume it finished (never risk a duplicate).
+                    if saw_printing:
+                        log.info("[%s] connection dropped mid-print; assuming "
+                                 "completion", self.fmt)
+                        return
+                    raise PrintError("printer dropped connection before printing")
                 instax.get_printer_status()
                 time.sleep(1.5)
-                self._update_film(instax.photosLeft, instax.batteryPercentage)
-                log.info("[%s] post-print film check: %d prints left",
-                         self.fmt, instax.photosLeft)
-            except Exception as e:
-                log.warning("[%s] post-print film check failed: %s", self.fmt, e)
+                fi = instax.func_info
+                if fi:
+                    if fi["result"] == RESULT_ERROR or fi["error_flag"]:
+                        raise PrintError(
+                            f"printer reported print error type {fi['err_type']} "
+                            "(check film pack / jam)")
+                    if fi["result"] == RESULT_PRINTING:
+                        saw_printing = True
+                    elif fi["result"] == RESULT_NORMAL and (
+                            saw_printing or fi["film"] == pre_film - 1):
+                        self._update_film(fi["film"], instax.batteryPercentage)
+                        log.info("[%s] print confirmed — %d prints left",
+                                 self.fmt, fi["film"])
+                        return
+                time.sleep(3)
+            raise PrintError("no print completion within "
+                             f"{config.PRINT_COMPLETE_TIMEOUT_SECONDS}s")
         finally:
             if instax is not None:
                 try:
