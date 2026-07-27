@@ -31,11 +31,13 @@ logging.basicConfig(
 )
 log = logging.getLogger("instax")
 
-# Mirror everything into bridge.log so the Control Room can show it.
+# Mirror printer/bridge activity into bridge.log for the Control Room —
+# instax events only, not the web server's request spam.
 _file_handler = logging.FileHandler("bridge.log")
 _file_handler.setFormatter(logging.Formatter(
     "%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S"))
-logging.getLogger().addHandler(_file_handler)
+log.addHandler(_file_handler)
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 JOB_POLL_SECONDS = 4
 STATUS_PUSH_SECONDS = 15
