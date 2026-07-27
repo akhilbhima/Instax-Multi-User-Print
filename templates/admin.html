@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control Room — Instax Multi User Print</title>
+<style>
+  :root { --green:#8CC63E; --leaf:#4C7A1B; --ink:#131512; --mist:#6A716B;
+          --chalk:#F4F6F1; --line:#E4E7E0; --clay:#BF4430; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; margin: 0; color: var(--ink);
+         background: #fff; padding: 28px 24px 60px; max-width: 1100px; margin-inline: auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 2px; text-transform: uppercase;
+       letter-spacing: -0.3px; font-weight: 800; }
+  h1 .dot { color: var(--green); }
+  .sub { color: var(--mist); margin: 0 0 24px; }
+  h2 { font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.05em;
+       margin: 34px 0 14px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; }
+  .card { background: var(--chalk); border-radius: 14px; padding: 18px 20px;
+          min-width: 300px; flex: 1; }
+  .card h3 { margin: 0 0 10px; text-transform: capitalize; display: flex;
+             align-items: center; gap: 8px; }
+  .led { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .led.ok { background: var(--green); } .led.bad { background: var(--clay); }
+  .led.warn { background: #E0A800; }
+  .row { display: flex; justify-content: space-between; padding: 3px 0;
+         font-size: 0.9rem; color: var(--mist); }
+  .row b { color: var(--ink); }
+  .assign { display: flex; gap: 8px; margin-top: 12px; }
+  select, button { font: inherit; }
+  select { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--line); }
+  .btn { padding: 8px 14px; border: none; border-radius: 8px; cursor: pointer;
+         font-weight: 700; background: var(--ink); color: #fff; }
+  .btn.green { background: var(--green); color: var(--ink); }
+  .btn.small { padding: 5px 10px; font-size: 0.78rem; border-radius: 6px; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .scanbar { margin: 14px 0 0; display: flex; align-items: center; gap: 12px; }
+  .scanbar .note { color: var(--mist); font-size: 0.85rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 14px; }
+  .ph { background: var(--chalk); border-radius: 10px; overflow: hidden; }
+  .ph img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+  .ph .meta { padding: 8px; }
+  .ph .name { font-size: 0.68rem; color: var(--mist); overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
+  .ph .actions { display: flex; gap: 6px; }
+  .badge { display: inline-block; background: var(--clay); color: #fff;
+           font-size: 0.66rem; font-weight: 700; border-radius: 5px;
+           padding: 1px 6px; margin-bottom: 4px; }
+  .empty { color: var(--mist); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 10px 22px;
+           border-radius: 999px; font-weight: 600; opacity: 0;
+           transition: opacity 0.25s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <h1>Control<span class="dot">·</span>Room</h1>
+  <p class="sub">Instax Multi User Print — operator console</p>
+
+  <h2>Printers</h2>
+  <div class="cards" id="cards"></div>
+  <div class="scanbar">
+    <button class="btn" id="scan">Scan for printers</button>
+    <span class="note" id="scan-note">Turn printers on, then scan to connect them to a slot.</span>
+  </div>
+
+  <h2>Photo catalogue <span style="color:var(--mist);font-weight:400" id="count"></span></h2>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden>No photos yet — they appear here the moment guests upload.</div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  var found = [];
+
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+
+  function led(p) {
+    if (!p.online) return 'bad';
+    if (p.out_of_film) return 'warn';
+    return 'ok';
+  }
+
+  function renderPrinters(printers) {
+    var html = '';
+    ['mini', 'wide'].forEach(function (fmt) {
+      var p = printers[fmt]; if (!p) return;
+      var opts = found.map(function (n) {
+        return '<option value="' + n + '">' + n + '</option>';
+      }).join('');
+      html += '<div class="card"><h3><span class="led ' + led(p) + '"></span>' + fmt +
+        ' printer</h3>' +
+        '<div class="row"><span>Device</span><b>' + p.device_name + '</b></div>' +
+        '<div class="row"><span>Status</span><b>' +
+          (!p.online ? 'off / asleep' : p.out_of_film ? 'out of film' : 'ready') + '</b></div>' +
+        '<div class="row"><span>Film left</span><b>' + (p.film_left ?? '—') + '</b></div>' +
+        '<div class="row"><span>Battery</span><b>' + (p.battery != null ? p.battery + '%' : '—') + '</b></div>' +
+        '<div class="row"><span>In queue</span><b>' + p.queued + '</b></div>' +
+        '<div class="row"><span>Printing now</span><b>' + (p.current || '—') + '</b></div>' +
+        '<div class="row"><span>Printed / failed</span><b>' + p.printed_count + ' / ' + p.failed_count + '</b></div>' +
+        (found.length ?
+          '<div class="assign"><select id="sel-' + fmt + '">' + opts + '</select>' +
+          '<button class="btn green" onclick="assign(\'' + fmt + '\')">Connect</button></div>'
+          : '') +
+        '</div>';
+    });
+    document.getElementById('cards').innerHTML = html;
+  }
+
+  function renderPhotos(photos) {
+    document.getElementById('count').textContent = '· ' + photos.length;
+    document.getElementById('empty').hidden = photos.length > 0;
+    document.getElementById('grid').innerHTML = photos.map(function (p) {
+      return '<div class="ph"><img loading="lazy" src="' + p.url + '" alt="' + p.name + '">' +
+        '<div class="meta">' + (p.failed ? '<span class="badge">failed</span>' : '') +
+        '<div class="name">' + p.name + '</div>' +
+        '<div class="actions">' +
+        '<button class="btn green small" onclick="printPhoto(\'' + p.name + '\',\'mini\')">Mini</button>' +
+        '<button class="btn small" onclick="printPhoto(\'' + p.name + '\',\'wide\')">Wide</button>' +
+        '</div></div></div>';
+    }).join('');
+  }
+
+  function refresh() {
+    fetch('/api/state').then(function (r) { return r.json(); }).then(function (s) {
+      renderPrinters(s.printers);
+      renderPhotos(s.photos);
+    }).catch(function () {});
+  }
+
+  function printPhoto(name, fmt) {
+    fetch('/api/print', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, format: fmt }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        toast(j.ok ? 'Queued on ' + fmt + ' (#' + j.position + ')' : (j.error || 'Failed'));
+        refresh();
+      });
+  }
+
+  function assign(fmt) {
+    var name = document.getElementById('sel-' + fmt).value;
+    fetch('/api/assign', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format: fmt, name: name }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        toast(j.ok ? fmt + ' printer set to ' + name : (j.error || 'Failed'));
+        refresh();
+      });
+  }
+
+  document.getElementById('scan').addEventListener('click', function () {
+    var btn = this;
+    btn.disabled = true;
+    document.getElementById('scan-note').textContent = 'Scanning (6s)…';
+    fetch('/api/discover', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        found = j.ok ? j.printers : [];
+        document.getElementById('scan-note').textContent = j.ok
+          ? (found.length ? 'Found: ' + found.join(', ') + ' — pick a slot below.'
+                          : 'No printers found — are they on?')
+          : (j.error || 'Scan failed');
+        refresh();
+      })
+      .finally(function () { btn.disabled = false; });
+  });
+
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+</body>
+</html>

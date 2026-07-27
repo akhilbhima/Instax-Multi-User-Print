@@ -217,13 +217,24 @@ def main():
               "run `python discover.py` and update config.py.\n")
 
     workers = {fmt: PrinterWorker(fmt) for fmt in config.FORMATS}
+    from admin import create_admin_app, load_name_overrides
+    for fmt, name in load_name_overrides().items():
+        if fmt in workers:
+            workers[fmt].device_name = name
     for w in workers.values():
         w.start()
 
+    admin_app = create_admin_app(workers)
+    threading.Thread(
+        target=lambda: admin_app.run(host=config.ADMIN_HOST, port=config.ADMIN_PORT,
+                                     threaded=True, use_reloader=False),
+        daemon=True, name="admin").start()
+
     print("\n" + "=" * 60)
-    print("  NM PHOTOPRINTS — CLOUD BRIDGE")
+    print("  INSTAX MULTI USER PRINT — BRIDGE")
     print("=" * 60)
-    print(f"  Guest page:  {config.CLOUD_URL}")
+    print(f"  Guest page:   {config.CLOUD_URL}")
+    print(f"  Control room: http://{config.ADMIN_HOST}:{config.ADMIN_PORT}")
     print(f"  Pulling jobs every {JOB_POLL_SECONDS}s, pushing status every "
           f"{STATUS_PUSH_SECONDS}s")
     print(f"  Archive:     ./{config.PHOTOS_DIR}/   (never deleted)")
