@@ -11,3 +11,4 @@ cloud/node_modules/
 cloud/.next/
 cloud/.vercel/
 .supabase-db-password
+bridge.log

@@ -34,6 +34,7 @@
          font-weight: 700; background: var(--ink); color: #fff; }
   .btn.green { background: var(--green); color: var(--ink); }
   .btn.small { padding: 5px 10px; font-size: 0.78rem; border-radius: 6px; }
+  .btn.danger { background: #fff; color: var(--clay); border: 1.5px solid var(--clay); }
   .btn:disabled { opacity: 0.5; cursor: default; }
   .scanbar { margin: 14px 0 0; display: flex; align-items: center; gap: 12px; }
   .scanbar .note { color: var(--mist); font-size: 0.85rem; }
@@ -70,6 +71,13 @@
   <h2>Photo catalogue <span style="color:var(--mist);font-weight:400" id="count"></span></h2>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" hidden>No photos yet — they appear here the moment guests upload.</div>
+
+  <h2>Bridge log
+    <button class="btn small" style="margin-left:10px" id="clear-logs">Clear</button>
+  </h2>
+  <pre id="logbox" style="background:var(--chalk);border-radius:10px;padding:14px;
+       font-size:0.74rem;line-height:1.5;max-height:260px;overflow:auto;
+       white-space:pre-wrap;color:var(--ink)"></pre>
 
   <div class="toast" id="toast"></div>
 
@@ -124,6 +132,7 @@
         '<div class="actions">' +
         '<button class="btn green small" onclick="printPhoto(\'' + p.name + '\',\'mini\')">Mini</button>' +
         '<button class="btn small" onclick="printPhoto(\'' + p.name + '\',\'wide\')">Wide</button>' +
+        '<button class="btn small danger" onclick="removePhoto(\'' + p.name + '\')">Remove</button>' +
         '</div></div></div>';
     }).join('');
   }
@@ -133,7 +142,27 @@
       renderPrinters(s.printers);
       renderPhotos(s.photos);
     }).catch(function () {});
+    fetch('/api/logs').then(function (r) { return r.json(); }).then(function (j) {
+      var box = document.getElementById('logbox');
+      var stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
+      box.textContent = (j.lines || []).join('\n');
+      if (stick) box.scrollTop = box.scrollHeight;
+    }).catch(function () {});
   }
+
+  function removePhoto(name) {
+    if (!window.confirm('Remove ' + name + ' from the catalogue? (kept in photos/.trash)')) return;
+    fetch('/api/photo/remove', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { toast(j.ok ? 'Removed' : (j.error || 'Failed')); refresh(); });
+  }
+
+  document.getElementById('clear-logs').addEventListener('click', function () {
+    fetch('/api/logs/clear', { method: 'POST' })
+      .then(function () { toast('Log cleared'); refresh(); });
+  });
 
   function printPhoto(name, fmt) {
     fetch('/api/print', { method: 'POST',

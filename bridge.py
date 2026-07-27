@@ -31,6 +31,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("instax")
 
+# Mirror everything into bridge.log so the Control Room can show it.
+_file_handler = logging.FileHandler("bridge.log")
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S"))
+logging.getLogger().addHandler(_file_handler)
+
 JOB_POLL_SECONDS = 4
 STATUS_PUSH_SECONDS = 15
 SECRET_FILE = ".agent-secret"

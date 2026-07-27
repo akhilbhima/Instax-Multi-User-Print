@@ -92,6 +92,37 @@ def create_admin_app(workers):
         log.info("admin: %s -> %s queue (position %d)", name, fmt, position)
         return jsonify(ok=True, position=position)
 
+    @app.route("/api/photo/remove", methods=["POST"])
+    def remove_photo():
+        data = request.get_json(force=True)
+        name = data.get("name", "")
+        if "/" in name or ".." in name or not name:
+            return jsonify(ok=False, error="bad request"), 400
+        trash = os.path.join(config.PHOTOS_DIR, ".trash")
+        os.makedirs(trash, exist_ok=True)
+        for directory in (config.PHOTOS_DIR, config.FAILED_DIR):
+            path = os.path.join(directory, name)
+            if os.path.exists(path):
+                os.rename(path, os.path.join(trash, name))
+                log.info("admin: removed %s from the catalogue (kept in photos/.trash)",
+                         name)
+                return jsonify(ok=True)
+        return jsonify(ok=False, error="photo not found"), 404
+
+    @app.route("/api/logs")
+    def logs():
+        if not os.path.exists("bridge.log"):
+            return jsonify(ok=True, lines=[])
+        with open("bridge.log", errors="replace") as f:
+            lines = f.readlines()[-200:]
+        return jsonify(ok=True, lines=[l.rstrip("\n") for l in lines])
+
+    @app.route("/api/logs/clear", methods=["POST"])
+    def clear_logs():
+        open("bridge.log", "w").close()
+        log.info("admin: log cleared")
+        return jsonify(ok=True)
+
     @app.route("/api/discover", methods=["POST"])
     def discover():
         import simplepyble
