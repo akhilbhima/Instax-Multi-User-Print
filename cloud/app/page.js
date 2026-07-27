@@ -61,6 +61,22 @@ async function compressPhoto(file) {
   return file;
 }
 
+function printHistory(status) {
+  if (!status || !status.agent) return { total: 0, recent: [] };
+  const rows = [];
+  let total = 0;
+  for (const key of ["mini", "wide"]) {
+    const p = status.agent[key];
+    if (!p) continue;
+    total += p.printed_count || 0;
+    for (const h of p.history || []) {
+      rows.push({ ...h, label: key === "mini" ? "Mini" : "Wide" });
+    }
+  }
+  rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return { total, recent: rows.slice(0, 8) };
+}
+
 function filmLine(status) {
   if (!status || !status.agent || status.agent.stale) {
     return { text: "connecting to the printers…", oof: false };
@@ -93,6 +109,7 @@ export default function Page() {
   const [status, setStatus] = useState(null);
   const inputRef = useRef(null);
   const cameraRef = useRef(null);
+  const busyRef = useRef(false); // double-tap guard: one upload per photo, ever
 
   useEffect(() => {
     let alive = true;
@@ -117,6 +134,8 @@ export default function Page() {
 
   async function upload(format) {
     if (!file) { reset(); return; }
+    if (busyRef.current) return;
+    busyRef.current = true;
     setStep("sending");
     try {
       const blob = await compressPhoto(file);
@@ -138,6 +157,8 @@ export default function Page() {
     } catch (e) {
       setError(`${e.message} — try again?`);
       setStep("format");
+    } finally {
+      busyRef.current = false;
     }
   }
 
@@ -152,6 +173,7 @@ export default function Page() {
   }
 
   const film = filmLine(status);
+  const history = printHistory(status);
 
   return (
     <div style={S.body}>
@@ -176,6 +198,19 @@ export default function Page() {
                  style={{ display: "none" }} onChange={onPick} />
           <input ref={inputRef} type="file" accept="image/*"
                  style={{ display: "none" }} onChange={onPick} />
+
+          {history.total > 0 && (
+            <div style={{ marginTop: 28, color: "#b9b4c7", fontSize: "0.9rem" }}>
+              <div style={{ fontWeight: 700, color: "#fff", marginBottom: 6 }}>
+                🖨 {history.total} print{history.total === 1 ? "" : "s"} so far
+              </div>
+              {history.recent.map((h, i) => (
+                <div key={i} style={{ padding: "2px 0" }}>
+                  {h.at} · {h.label}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

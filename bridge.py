@@ -60,6 +60,21 @@ def api(secret, path, data=None, raw=False):
     return json.loads(body)
 
 
+def seed_seen_from_archive():
+    """Cloud basenames of jobs already downloaded, reconstructed from the
+    archive filenames (YYYYmmdd-HHMMSS-<cloud basename>). Guarantees a job is
+    never printed twice even if the bridge restarts before its cloud-queue
+    delete went through."""
+    seen = set()
+    for d in (config.PHOTOS_DIR, config.FAILED_DIR):
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                parts = f.split("-", 2)
+                if len(parts) == 3:
+                    seen.add(parts[2])
+    return seen
+
+
 def job_loop(secret, workers, seen):
     import json
     while True:
@@ -67,25 +82,30 @@ def job_loop(secret, workers, seen):
             resp = api(secret, "/api/agent/jobs")
             for job in resp.get("jobs", []):
                 pathname = job["pathname"]           # queue/<fmt>/<stamp>-<rand>.jpg
-                if pathname in seen:
-                    continue
+                base = os.path.basename(pathname)
                 parts = pathname.split("/")
                 fmt = parts[1] if len(parts) > 2 else None
                 if fmt not in workers:
                     log.warning("skipping job with unknown format: %s", pathname)
                     continue
-                photo = api(secret, job["url"], raw=True)
-                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                filename = f"{stamp}-{os.path.basename(pathname)}"
-                local_path = os.path.join(config.PHOTOS_DIR, filename)
-                with open(local_path, "wb") as f:
-                    f.write(photo)
-                seen.add(pathname)
-                position = workers[fmt].submit(local_path)
-                log.info("cloud job %s -> %s queue (position %d)",
-                         pathname, fmt, position)
-                api(secret, "/api/agent/complete",
-                    data=json.dumps({"url": job["url"]}).encode())
+                if base not in seen:
+                    photo = api(secret, job["url"], raw=True)
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    local_path = os.path.join(config.PHOTOS_DIR, f"{stamp}-{base}")
+                    with open(local_path, "wb") as f:
+                        f.write(photo)
+                    seen.add(base)
+                    position = workers[fmt].submit(local_path)
+                    log.info("cloud job %s -> %s queue (position %d)",
+                             pathname, fmt, position)
+                # Delete from the cloud queue — also reached for already-seen
+                # jobs, so a previously failed delete is retried every poll.
+                try:
+                    api(secret, "/api/agent/complete",
+                        data=json.dumps({"url": job["url"]}).encode())
+                except Exception as e:
+                    log.warning("cloud delete of %s failed (%s) — will retry",
+                                pathname, e)
         except Exception as e:
             log.warning("job poll failed (%s) — cloud unreachable? retrying", e)
         time.sleep(JOB_POLL_SECONDS)
@@ -130,7 +150,7 @@ def main():
         print("  ⚠️  PRINT_ENABLED = False — dry-run mode, nothing will print!")
     print("=" * 60 + "\n")
 
-    seen = set()   # pathnames already downloaded (survives a failed delete)
+    seen = seed_seen_from_archive()   # never double-print, even across restarts
     threading.Thread(target=status_loop, args=(secret, workers),
                      daemon=True, name="status-push").start()
     job_loop(secret, workers, seen)

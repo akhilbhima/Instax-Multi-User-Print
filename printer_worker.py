@@ -13,6 +13,7 @@ import shutil
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from io import BytesIO
 
 from PIL import Image, ImageOps
@@ -91,6 +92,7 @@ class PrinterWorker(threading.Thread):
         self.jobs = queue.Queue()
         self.lock = threading.Lock()
         self.printed = deque(maxlen=5)   # last 5 printed filenames
+        self.history = deque(maxlen=20)  # {"file", "at" (HH:MM), "ts"} per print
         self.printed_count = 0
         self.failed_count = 0
         self.current = None              # filename being printed right now
@@ -99,6 +101,7 @@ class PrinterWorker(threading.Thread):
         self.battery = None              # battery %, None = not yet known
         self.out_of_film = False         # True = queue paused, waiting for refill
         self._last_low_warn = None       # last film count we warned about
+        self._last_film_check = 0.0      # monotonic-ish time of last real BLE read
 
     # -- public API ---------------------------------------------------------
 
@@ -118,6 +121,7 @@ class PrinterWorker(threading.Thread):
                 "printed_count": self.printed_count,
                 "failed_count": self.failed_count,
                 "last_printed": list(self.printed),
+                "history": list(self.history),
                 "last_error": self.last_error,
                 "film_left": self.film_left,
                 "battery": self.battery,
@@ -134,7 +138,14 @@ class PrinterWorker(threading.Thread):
             # simply be asleep; every print job re-checks anyway.
             self._query_film(startup=True)
         while True:
-            src_path = self.jobs.get()
+            try:
+                src_path = self.jobs.get(timeout=5)
+            except queue.Empty:
+                # Idle: periodically re-read the REAL film count from the
+                # printer so the displayed number can't drift from reality.
+                if time.time() - self._last_film_check > config.FILM_IDLE_RECHECK_SECONDS:
+                    self._query_film()
+                continue
             name = os.path.basename(src_path)
             with self.lock:
                 self.current = name
@@ -152,9 +163,12 @@ class PrinterWorker(threading.Thread):
                 with self.lock:
                     self.printed_count += 1
                     self.printed.append(name)
+                    self.history.append({
+                        "file": name,
+                        "at": datetime.now().strftime("%H:%M"),
+                        "ts": time.time(),
+                    })
                     self.last_error = None
-                    if self.film_left:
-                        self.film_left -= 1
                 self._warn_if_low()
                 log.info("[%s] PRINTED %s", self.fmt, name)
             except Exception as e:
@@ -188,10 +202,20 @@ class PrinterWorker(threading.Thread):
 
     # -- film monitoring -----------------------------------------------------
 
+    @staticmethod
+    def _wait_for_printer_info(instax, extra_seconds=3):
+        """connect() only waits 1s for the printer's info replies; give the
+        film/battery packets a little longer so we never act on a
+        not-yet-populated (0) film count."""
+        deadline = time.time() + extra_seconds
+        while instax.printerSettings is None and time.time() < deadline:
+            time.sleep(0.2)
+
     def _update_film(self, film, battery):
         with self.lock:
             self.film_left = film
             self.battery = battery
+        self._last_film_check = time.time()
 
     def _warn_if_low(self):
         with self.lock:
@@ -206,6 +230,9 @@ class PrinterWorker(threading.Thread):
     def _query_film(self, startup=False):
         """Status-only BLE check: connect, read film/battery, disconnect.
         Returns prints remaining, or None if the printer was unreachable."""
+        # Stamp up front so an unreachable printer isn't re-scanned in a
+        # tight loop by the idle checker.
+        self._last_film_check = time.time()
         instax = None
         try:
             with _ble_lock:
@@ -214,6 +241,8 @@ class PrinterWorker(threading.Thread):
                 except SystemExit:
                     return None
                 instax.connect(timeout=config.STATUS_CONNECT_TIMEOUT_SECONDS)
+            if instax.peripheral and instax.peripheral.is_connected():
+                self._wait_for_printer_info(instax)
             if (not instax.peripheral or not instax.peripheral.is_connected()
                     or instax.printerSettings is None):
                 if startup:
@@ -280,6 +309,7 @@ class PrinterWorker(threading.Thread):
             if not instax.peripheral or not instax.peripheral.is_connected():
                 raise PrintError(f"printer {self.device_name} not found/connected "
                                  f"within {config.CONNECT_TIMEOUT_SECONDS}s (is it on?)")
+            self._wait_for_printer_info(instax)
             if instax.printerSettings is None:
                 # Printer never answered the info request; connection is bad.
                 raise PrintError("connected but printer did not report its status")
@@ -297,6 +327,17 @@ class PrinterWorker(threading.Thread):
             # notification handler drains the queue. Wait for it, watching for
             # stalls (BLE drop mid-transfer leaves the queue stuck).
             instax.print_image(bytearray(jpeg_bytes))
+
+            # InstaxBLE queues a trailing status query after the PRINT_IMAGE
+            # command, but its handler only advances the queue on transfer
+            # events — the print confirmation never triggers the send. Left in
+            # place, the queue sticks at 1 forever, the stall detector calls a
+            # SUCCESSFUL print a failure, and the retry prints a duplicate.
+            # Drop it; queue-empty then means exactly "print command sent once".
+            if config.PRINT_ENABLED and instax.packetsForPrinting:
+                last = instax.packetsForPrinting[-1]
+                if bytes(last[4:6]) == b"\x00\x02":  # SUPPORT_FUNCTION_INFO opcode
+                    instax.packetsForPrinting.pop()
             deadline = time.time() + config.TRANSFER_TIMEOUT_SECONDS
             last_len = len(instax.packetsForPrinting)
             last_progress = time.time()
@@ -316,6 +357,18 @@ class PrinterWorker(threading.Thread):
             log.info("[%s] transfer complete, waiting %ds for the print to eject",
                      self.fmt, config.POST_PRINT_WAIT_SECONDS)
             time.sleep(config.POST_PRINT_WAIT_SECONDS)
+
+            # Still connected: ask the printer for its REAL remaining-film
+            # count instead of guessing with a local decrement. If this fails
+            # the idle re-check corrects the display within a minute anyway.
+            try:
+                instax.get_printer_status()
+                time.sleep(1.5)
+                self._update_film(instax.photosLeft, instax.batteryPercentage)
+                log.info("[%s] post-print film check: %d prints left",
+                         self.fmt, instax.photosLeft)
+            except Exception as e:
+                log.warning("[%s] post-print film check failed: %s", self.fmt, e)
         finally:
             if instax is not None:
                 try:
