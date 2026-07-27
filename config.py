@@ -6,8 +6,8 @@ suffix is optional — matching is by prefix).
 """
 
 # --- Printer device names (from discover.py) ---------------------------------
-MINI_PRINTER_NAME = "INSTAX-XXXXXXXX"   # Instax Mini Link 3  (600x800 portrait)
-WIDE_PRINTER_NAME = "INSTAX-XXXXXXXX"   # Instax Link Wide    (1260x840 landscape)
+MINI_PRINTER_NAME = "INSTAX-71028752"   # Instax Mini Link 3  (600x800 portrait)
+WIDE_PRINTER_NAME = "INSTAX-20296765"   # Instax Link Wide    (1260x840 landscape)
 
 # --- Print formats ------------------------------------------------------------
 # width, height in pixels — these are fixed by the printer hardware.
