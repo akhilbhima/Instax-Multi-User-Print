@@ -2,30 +2,40 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// New Mercy brand: fresh green + white + heavy black type
+const GREEN = "#8CC63E";
+const INK = "#111111";
+
 const S = {
   body: {
     fontFamily: "-apple-system, system-ui, sans-serif",
-    background: "#1c1a24", color: "#fff", minHeight: "100vh",
+    background: "#ffffff", color: INK, minHeight: "100vh",
     display: "flex", flexDirection: "column", alignItems: "center",
     justifyContent: "center", padding: 24, textAlign: "center",
   },
   step: { width: "100%", maxWidth: 420 },
-  h1: { fontSize: "1.6rem", margin: "0 0 6px" },
-  sub: { color: "#b9b4c7", margin: "0 0 16px" },
-  film: { color: "#d9d4e7", fontSize: "0.9rem", marginBottom: 24, minHeight: "1.2em" },
-  oof: { color: "#ff5d8f", fontWeight: 600 },
+  h1: { fontSize: "1.7rem", margin: "0 0 6px", fontWeight: 800,
+        textTransform: "uppercase", letterSpacing: "-0.5px" },
+  sub: { color: "#6b6b6b", margin: "0 0 16px" },
+  film: { color: "#444", fontSize: "0.9rem", marginBottom: 24, minHeight: "1.2em" },
+  oof: { color: "#c0392b", fontWeight: 600 },
   btn: {
     display: "block", width: "100%", padding: 22, margin: "10px 0",
-    fontSize: "1.25rem", fontWeight: 700, border: "none", borderRadius: 16,
+    fontSize: "1.25rem", fontWeight: 800, border: "none", borderRadius: 16,
     cursor: "pointer", WebkitTapHighlightColor: "transparent",
   },
-  note: { fontSize: "0.85rem", fontWeight: 400, opacity: 0.85, display: "block", marginTop: 2 },
-  preview: { maxWidth: "70%", maxHeight: "32vh", borderRadius: 12, margin: "12px auto", display: "block" },
-  pos: { fontSize: "3rem", fontWeight: 800, color: "#ffb703" },
-  err: { color: "#ff5d8f", marginTop: 12, minHeight: "1.2em" },
+  note: { fontSize: "0.85rem", fontWeight: 400, opacity: 0.8, display: "block", marginTop: 2 },
+  preview: { maxWidth: "70%", maxHeight: "32vh", borderRadius: 12, margin: "12px auto",
+             display: "block", border: "1px solid #e5e5e5" },
+  pos: {
+    fontSize: "2.6rem", fontWeight: 800, color: INK, background: GREEN,
+    width: 120, height: 120, borderRadius: "50%", display: "flex",
+    alignItems: "center", justifyContent: "center", margin: "12px auto",
+  },
+  err: { color: "#c0392b", marginTop: 12, minHeight: "1.2em" },
   spinner: {
     margin: "18px auto", width: 36, height: 36, borderRadius: "50%",
-    border: "4px solid #444", borderTopColor: "#ffb703",
+    border: "4px solid #e5e5e5", borderTopColor: GREEN,
     animation: "spin 0.8s linear infinite",
   },
 };
@@ -127,10 +137,10 @@ function QueueGrid({ status, onCancel }) {
                 <img src={item.url} alt={`queued photo ${i + 1}`}
                      style={{ width: 104, height: 104, objectFit: "cover",
                               borderRadius: 10, display: "block",
-                              border: printing ? "2px solid #ffb703" : "2px solid transparent" }} />
+                              border: printing ? `3px solid ${GREEN}` : "1px solid #e0e0e0" }} />
                 <div style={{ position: "absolute", top: 4, left: 4,
-                              background: printing ? "#ffb703" : "rgba(0,0,0,0.65)",
-                              color: printing ? "#1c1a24" : "#fff",
+                              background: printing ? GREEN : INK,
+                              color: printing ? INK : "#fff",
                               borderRadius: 6, padding: "1px 7px",
                               fontSize: "0.75rem", fontWeight: 700 }}>
                   {printing ? "printing" : `#${i + 1}`}
@@ -140,8 +150,8 @@ function QueueGrid({ status, onCancel }) {
                           onClick={() => onCancel(item.pathname)}
                           style={{ position: "absolute", top: 4, right: 4,
                                    width: 24, height: 24, borderRadius: "50%",
-                                   border: "none", background: "rgba(0,0,0,0.7)",
-                                   color: "#ff5d8f", fontWeight: 800,
+                                   border: "none", background: INK,
+                                   color: "#fff", fontWeight: 800,
                                    fontSize: "0.85rem", lineHeight: 1,
                                    cursor: "pointer" }}>
                     ✕
@@ -152,7 +162,7 @@ function QueueGrid({ status, onCancel }) {
           })}
         </div>
         {items.length > 12 && (
-          <div style={{ color: "#b9b4c7", fontSize: "0.85rem", marginTop: 6 }}>
+          <div style={{ color: "#6b6b6b", fontSize: "0.85rem", marginTop: 6 }}>
             +{items.length - 12} more
           </div>
         )}
@@ -263,10 +273,11 @@ export default function Page() {
             {[["print", "Print"], ["queue", `Queue${queueTotal ? ` (${queueTotal})` : ""}`]].map(
               ([id, label]) => (
                 <button key={id} onClick={() => setTab(id)}
-                        style={{ padding: "8px 20px", borderRadius: 999, border: "none",
+                        style={{ padding: "8px 20px", borderRadius: 999,
+                                 border: tab === id ? "none" : "2px solid #e0e0e0",
                                  fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
-                                 background: tab === id ? "#ffb703" : "#2a2735",
-                                 color: tab === id ? "#1c1a24" : "#b9b4c7" }}>
+                                 background: tab === id ? GREEN : "#ffffff",
+                                 color: tab === id ? INK : "#6b6b6b" }}>
                   {label}
                 </button>
               ),
@@ -276,11 +287,12 @@ export default function Page() {
           {tab === "queue" && <QueueGrid status={status} onCancel={cancelQueued} />}
           {tab === "print" && <>
 
-          <button style={{ ...S.btn, background: "#ffb703", color: "#1c1a24" }}
+          <button style={{ ...S.btn, background: GREEN, color: INK }}
                   onClick={() => cameraRef.current && cameraRef.current.click()}>
             📷 Take a Photo
           </button>
-          <button style={{ ...S.btn, background: "#2a2735", color: "#fff" }}
+          <button style={{ ...S.btn, background: "#ffffff", color: INK,
+                           border: `3px solid ${INK}` }}
                   onClick={() => inputRef.current && inputRef.current.click()}>
             🖼 Choose from Library
           </button>
@@ -292,8 +304,8 @@ export default function Page() {
                  style={{ display: "none" }} onChange={onPick} />
 
           {history.total > 0 && (
-            <div style={{ marginTop: 28, color: "#b9b4c7", fontSize: "0.9rem" }}>
-              <div style={{ fontWeight: 700, color: "#fff", marginBottom: 6 }}>
+            <div style={{ marginTop: 28, color: "#6b6b6b", fontSize: "0.9rem" }}>
+              <div style={{ fontWeight: 800, color: INK, marginBottom: 6 }}>
                 🖨 {history.total} print{history.total === 1 ? "" : "s"} so far
               </div>
               {history.recent.map((h, i) => (
@@ -311,11 +323,11 @@ export default function Page() {
         <div style={S.step}>
           <h1 style={S.h1}>Pick a print size</h1>
           {previewUrl && <img src={previewUrl} alt="your photo" style={S.preview} />}
-          <button style={{ ...S.btn, background: "#ff5d8f", color: "#fff" }}
+          <button style={{ ...S.btn, background: GREEN, color: INK }}
                   onClick={() => upload("mini")}>
             Mini <span style={S.note}>small &amp; tall — classic instax</span>
           </button>
-          <button style={{ ...S.btn, background: "#4cc9f0", color: "#1c1a24" }}
+          <button style={{ ...S.btn, background: INK, color: "#fff" }}
                   onClick={() => upload("wide")}>
             Wide <span style={S.note}>big &amp; wide — group shots</span>
           </button>
@@ -332,16 +344,16 @@ export default function Page() {
 
       {step === "done" && result && (
         <div style={S.step}>
-          <h1 style={{ fontSize: "1.5rem", margin: "0 0 8px" }}>🎉 In the queue!</h1>
+          <h1 style={{ ...S.h1, fontSize: "1.5rem", margin: "0 0 8px" }}>🎉 In the queue!</h1>
           <div style={S.pos}>#{result.position}</div>
-          <p style={{ color: "#b9b4c7", margin: "8px 0 20px" }}>
+          <p style={{ color: "#6b6b6b", margin: "8px 0 20px" }}>
             {result.refilling
               ? "Added to queue — this printer is being refilled, your photo will print shortly."
               : result.position === 1
                 ? `Your photo is printing next on the ${result.format} printer!`
                 : `position in the ${result.format} printer queue — hang tight!`}
           </p>
-          <button style={{ ...S.btn, background: "#ffb703", color: "#1c1a24" }} onClick={reset}>
+          <button style={{ ...S.btn, background: GREEN, color: INK }} onClick={reset}>
             Print Another
           </button>
         </div>
