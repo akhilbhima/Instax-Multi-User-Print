@@ -6,6 +6,7 @@ photos/*
 qr.png
 .DS_Store
 .agent-secret
+.printed-log
 cloud/node_modules/
 cloud/.next/
 cloud/.vercel/

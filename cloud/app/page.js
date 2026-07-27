@@ -90,7 +90,9 @@ function filmLine(status) {
     if (!p) continue;
     if (p.out_of_film) {
       anyOof = true;
-      parts.push(`${label}: OUT OF FILM (queue paused, ${p.waiting + cloudExtra} waiting)`);
+      // Blobs now stay queued until printed, so the cloud count IS the
+      // full number of photos waiting.
+      parts.push(`${label}: OUT OF FILM (queue paused, ${cloudExtra} waiting)`);
     } else if (p.film_left === null || p.film_left === undefined) {
       parts.push(`${label}: ready`);
     } else {
@@ -100,8 +102,53 @@ function filmLine(status) {
   return { text: parts.join("  ·  "), oof: anyOof };
 }
 
+function QueueGrid({ status }) {
+  const sections = [];
+  for (const key of ["mini", "wide"]) {
+    const items = (status && status.queue && status.queue[key]) || [];
+    const current = status && status.agent && !status.agent.stale
+      ? (status.agent[key] || {}).current : null;
+    sections.push(
+      <div key={key} style={{ marginBottom: 24 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>
+          {key === "mini" ? "Mini" : "Wide"} queue
+          {items.length === 0 ? " — empty" : ` — ${items.length} waiting`}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+          {items.slice(0, 12).map((item, i) => {
+            const base = item.pathname.split("/").pop();
+            const printing = i === 0 && current && current.endsWith(base);
+            return (
+              <div key={item.pathname} style={{ position: "relative" }}>
+                <img src={item.url} alt={`queued photo ${i + 1}`}
+                     style={{ width: 104, height: 104, objectFit: "cover",
+                              borderRadius: 10, display: "block",
+                              border: printing ? "2px solid #ffb703" : "2px solid transparent" }} />
+                <div style={{ position: "absolute", top: 4, left: 4,
+                              background: printing ? "#ffb703" : "rgba(0,0,0,0.65)",
+                              color: printing ? "#1c1a24" : "#fff",
+                              borderRadius: 6, padding: "1px 7px",
+                              fontSize: "0.75rem", fontWeight: 700 }}>
+                  {printing ? "printing" : `#${i + 1}`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {items.length > 12 && (
+          <div style={{ color: "#b9b4c7", fontSize: "0.85rem", marginTop: 6 }}>
+            +{items.length - 12} more
+          </div>
+        )}
+      </div>,
+    );
+  }
+  return <div>{sections}</div>;
+}
+
 export default function Page() {
   const [step, setStep] = useState("pick"); // pick | format | sending | done
+  const [tab, setTab] = useState("print");  // print | queue
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [error, setError] = useState("");
@@ -174,6 +221,8 @@ export default function Page() {
 
   const film = filmLine(status);
   const history = printHistory(status);
+  const queueTotal = status && status.cloud_queue
+    ? (status.cloud_queue.mini || 0) + (status.cloud_queue.wide || 0) : 0;
 
   return (
     <div style={S.body}>
@@ -183,7 +232,23 @@ export default function Page() {
         <div style={S.step}>
           <h1 style={S.h1}>📸 NM Photoprints</h1>
           <p style={S.sub}>Snap or pick a photo — it prints right here at the party!</p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 18 }}>
+            {[["print", "Print"], ["queue", `Queue${queueTotal ? ` (${queueTotal})` : ""}`]].map(
+              ([id, label]) => (
+                <button key={id} onClick={() => setTab(id)}
+                        style={{ padding: "8px 20px", borderRadius: 999, border: "none",
+                                 fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                                 background: tab === id ? "#ffb703" : "#2a2735",
+                                 color: tab === id ? "#1c1a24" : "#b9b4c7" }}>
+                  {label}
+                </button>
+              ),
+            )}
+          </div>
           <div style={{ ...S.film, ...(film.oof ? S.oof : {}) }}>{film.text}</div>
+          {tab === "queue" && <QueueGrid status={status} />}
+          {tab === "print" && <>
+
           <button style={{ ...S.btn, background: "#ffb703", color: "#1c1a24" }}
                   onClick={() => cameraRef.current && cameraRef.current.click()}>
             📷 Take a Photo
@@ -211,6 +276,7 @@ export default function Page() {
               ))}
             </div>
           )}
+          </>}
         </div>
       )}
 

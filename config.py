@@ -47,6 +47,10 @@ POST_PRINT_WAIT_SECONDS = 20          # let the printer physically print/eject
 
 # --- Film monitoring ----------------------------------------------------------
 FILM_RECHECK_SECONDS = 30       # while out of film, re-check the printer this often
-FILM_IDLE_RECHECK_SECONDS = 60  # re-verify the real film count when idle this often
+# Idle re-check doubles as the KEEP-AWAKE: each BLE connection resets the
+# printer's ~10-min auto-sleep timer, so at 60s they never doze off during an
+# event. (A printer that's ALREADY asleep stops advertising BLE and can only
+# be woken with its power button — after that, this keeps it awake.)
+FILM_IDLE_RECHECK_SECONDS = 60
 LOW_FILM_THRESHOLD = 2          # console warning when film drops to this or fewer
 STATUS_CONNECT_TIMEOUT_SECONDS = 15   # BLE scan timeout for a status-only check

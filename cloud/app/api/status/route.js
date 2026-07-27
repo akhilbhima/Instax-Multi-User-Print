@@ -28,8 +28,15 @@ export async function GET() {
     }
   }
 
+  // Oldest-first = print order (pathnames start with an ISO timestamp).
+  const queueItems = (blobs) =>
+    blobs
+      .sort((a, b) => a.pathname.localeCompare(b.pathname))
+      .map((b) => ({ url: b.url, pathname: b.pathname, uploadedAt: b.uploadedAt }));
+
   return Response.json({
     agent, // null until the Mac bridge has reported at least once
     cloud_queue: { mini: miniQ.blobs.length, wide: wideQ.blobs.length },
+    queue: { mini: queueItems(miniQ.blobs), wide: queueItems(wideQ.blobs) },
   });
 }

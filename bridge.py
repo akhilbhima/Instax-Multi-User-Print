@@ -60,25 +60,74 @@ def api(secret, path, data=None, raw=False):
     return json.loads(body)
 
 
-def seed_seen_from_archive():
-    """Cloud basenames of jobs already downloaded, reconstructed from the
-    archive filenames (YYYYmmdd-HHMMSS-<cloud basename>). Guarantees a job is
-    never printed twice even if the bridge restarts before its cloud-queue
-    delete went through."""
-    seen = set()
-    for d in (config.PHOTOS_DIR, config.FAILED_DIR):
-        if os.path.isdir(d):
-            for f in os.listdir(d):
-                parts = f.split("-", 2)
-                if len(parts) == 3:
-                    seen.add(parts[2])
-    return seen
+PRINTED_LOG = ".printed-log"   # cloud basenames confirmed printed; survives restarts
 
 
-def job_loop(secret, workers, seen):
+def cloud_base(local_name):
+    """Local archive names are YYYYmmdd-HHMMSS-<cloud basename>."""
+    parts = local_name.split("-", 2)
+    return parts[2] if len(parts) == 3 else None
+
+
+def load_printed_log():
+    if os.path.exists(PRINTED_LOG):
+        with open(PRINTED_LOG) as f:
+            return {line.strip() for line in f if line.strip()}
+    return set()
+
+
+def mark_printed(base):
+    with open(PRINTED_LOG, "a") as f:
+        f.write(base + "\n")
+
+
+def find_in_dir(directory, base):
+    if os.path.isdir(directory):
+        for f in os.listdir(directory):
+            if f.endswith(base):
+                return os.path.join(directory, f)
+    return None
+
+
+def complete_job(secret, url):
     import json
+    api(secret, "/api/agent/complete", data=json.dumps({"url": url}).encode())
+
+
+def job_loop(secret, workers, printed):
+    """Jobs stay in the cloud queue (so the guest page can show them) until
+    they are printed or permanently failed; only then are they deleted.
+    The printed-log guarantees a job is never printed twice, even across
+    bridge restarts."""
+    submitted = set()   # basenames handed to a worker by THIS process
+    pending = {}        # basename -> blob url, awaiting print confirmation
     while True:
         try:
+            # 1) Clear finished work from the cloud queue.
+            for w in workers.values():
+                for h in w.status()["history"]:
+                    base = cloud_base(h["file"])
+                    if base and base in pending:
+                        try:
+                            complete_job(secret, pending[base])
+                            mark_printed(base)
+                            printed.add(base)
+                            del pending[base]
+                            log.info("printed %s — removed from cloud queue", base)
+                        except Exception as e:
+                            log.warning("cloud delete of %s failed (%s) — will retry",
+                                        base, e)
+            for base in list(pending):
+                if find_in_dir(config.FAILED_DIR, base):
+                    try:
+                        complete_job(secret, pending[base])
+                        del pending[base]
+                        log.info("failed %s — removed from cloud queue", base)
+                    except Exception as e:
+                        log.warning("cloud delete of %s failed (%s) — will retry",
+                                    base, e)
+
+            # 2) Pull new jobs.
             resp = api(secret, "/api/agent/jobs")
             for job in resp.get("jobs", []):
                 pathname = job["pathname"]           # queue/<fmt>/<stamp>-<rand>.jpg
@@ -88,24 +137,41 @@ def job_loop(secret, workers, seen):
                 if fmt not in workers:
                     log.warning("skipping job with unknown format: %s", pathname)
                     continue
-                if base not in seen:
+                if base in printed:
+                    # Printed before a crash/restart; just clean up the blob.
+                    try:
+                        complete_job(secret, job["url"])
+                    except Exception:
+                        pass
+                    continue
+                if base in submitted:
+                    pending.setdefault(base, job["url"])
+                    continue
+                if find_in_dir(config.FAILED_DIR, base):
+                    # Exhausted its retries in an earlier run — don't auto-retry;
+                    # the operator can re-upload it deliberately.
+                    try:
+                        complete_job(secret, job["url"])
+                        log.info("cleared previously-failed %s from cloud queue", base)
+                    except Exception:
+                        pass
+                    continue
+                local_path = find_in_dir(config.PHOTOS_DIR, base)
+                if local_path is None:
                     photo = api(secret, job["url"], raw=True)
                     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                     local_path = os.path.join(config.PHOTOS_DIR, f"{stamp}-{base}")
                     with open(local_path, "wb") as f:
                         f.write(photo)
-                    seen.add(base)
-                    position = workers[fmt].submit(local_path)
-                    log.info("cloud job %s -> %s queue (position %d)",
-                             pathname, fmt, position)
-                # Delete from the cloud queue — also reached for already-seen
-                # jobs, so a previously failed delete is retried every poll.
-                try:
-                    api(secret, "/api/agent/complete",
-                        data=json.dumps({"url": job["url"]}).encode())
-                except Exception as e:
-                    log.warning("cloud delete of %s failed (%s) — will retry",
-                                pathname, e)
+                else:
+                    # Downloaded by a previous run but never printed (it's not
+                    # in the printed-log) — re-queue the local copy.
+                    log.info("re-queueing %s from a previous run", base)
+                submitted.add(base)
+                pending[base] = job["url"]
+                position = workers[fmt].submit(local_path)
+                log.info("cloud job %s -> %s queue (position %d)",
+                         pathname, fmt, position)
         except Exception as e:
             log.warning("job poll failed (%s) — cloud unreachable? retrying", e)
         time.sleep(JOB_POLL_SECONDS)
@@ -150,10 +216,10 @@ def main():
         print("  ⚠️  PRINT_ENABLED = False — dry-run mode, nothing will print!")
     print("=" * 60 + "\n")
 
-    seen = seed_seen_from_archive()   # never double-print, even across restarts
+    printed = load_printed_log()   # never double-print, even across restarts
     threading.Thread(target=status_loop, args=(secret, workers),
                      daemon=True, name="status-push").start()
-    job_loop(secret, workers, seen)
+    job_loop(secret, workers, printed)
 
 
 if __name__ == "__main__":
