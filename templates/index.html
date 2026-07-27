@@ -45,10 +45,17 @@
   <h1>📸 Instax Party Printer</h1>
   <p class="sub">Snap or pick a photo — it prints right here at the party!</p>
   <div id="film-status"></div>
-  <button class="big-btn" id="pick-btn" onclick="document.getElementById('file').click()">
-    Take / Choose Photo
+  <button class="big-btn" id="pick-btn" onclick="document.getElementById('camera').click()">
+    📷 Take a Photo
   </button>
-  <input type="file" id="file" accept="image/*" capture class="hidden">
+  <button class="big-btn" id="library-btn" style="background:#2a2735;color:#fff"
+          onclick="document.getElementById('file').click()">
+    🖼 Choose from Library
+  </button>
+  <!-- `capture` forces the camera; the second input omits it so the
+       photo-library picker opens instead -->
+  <input type="file" id="camera" accept="image/*" capture="environment" class="hidden">
+  <input type="file" id="file" accept="image/*" class="hidden">
 </div>
 
 <div class="step hidden" id="step-format">
@@ -80,6 +87,7 @@
 
 <script>
   var fileInput = document.getElementById('file');
+  var cameraInput = document.getElementById('camera');
   var currentFile = null;
 
   function show(id) {
@@ -88,13 +96,15 @@
     });
   }
 
-  fileInput.addEventListener('change', function () {
-    if (!fileInput.files.length) return;
-    currentFile = fileInput.files[0];
+  function onPicked(input) {
+    if (!input.files.length) return;
+    currentFile = input.files[0];
     document.getElementById('preview').src = URL.createObjectURL(currentFile);
     document.getElementById('error').textContent = '';
     show('step-format');
-  });
+  }
+  fileInput.addEventListener('change', function () { onPicked(fileInput); });
+  cameraInput.addEventListener('change', function () { onPicked(cameraInput); });
 
   function upload(fmt) {
     if (!currentFile) { reset(); return; }
@@ -127,6 +137,7 @@
   function reset() {
     currentFile = null;
     fileInput.value = '';
+    cameraInput.value = '';
     show('step-pick');
   }
 

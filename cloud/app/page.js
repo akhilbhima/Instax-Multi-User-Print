@@ -92,6 +92,7 @@ export default function Page() {
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState(null);
   const inputRef = useRef(null);
+  const cameraRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -146,6 +147,7 @@ export default function Page() {
     setPreviewUrl(null);
     setResult(null);
     if (inputRef.current) inputRef.current.value = "";
+    if (cameraRef.current) cameraRef.current.value = "";
     setStep("pick");
   }
 
@@ -161,10 +163,18 @@ export default function Page() {
           <p style={S.sub}>Snap or pick a photo — it prints right here at the party!</p>
           <div style={{ ...S.film, ...(film.oof ? S.oof : {}) }}>{film.text}</div>
           <button style={{ ...S.btn, background: "#ffb703", color: "#1c1a24" }}
-                  onClick={() => inputRef.current && inputRef.current.click()}>
-            Take / Choose Photo
+                  onClick={() => cameraRef.current && cameraRef.current.click()}>
+            📷 Take a Photo
           </button>
-          <input ref={inputRef} type="file" accept="image/*" capture
+          <button style={{ ...S.btn, background: "#2a2735", color: "#fff" }}
+                  onClick={() => inputRef.current && inputRef.current.click()}>
+            🖼 Choose from Library
+          </button>
+          {/* `capture` forces the camera; the second input omits it so the
+              photo-library picker opens instead */}
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment"
+                 style={{ display: "none" }} onChange={onPick} />
+          <input ref={inputRef} type="file" accept="image/*"
                  style={{ display: "none" }} onChange={onPick} />
         </div>
       )}
