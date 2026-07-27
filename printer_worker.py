@@ -102,6 +102,8 @@ class PrinterWorker(threading.Thread):
         self.out_of_film = False         # True = queue paused, waiting for refill
         self._last_low_warn = None       # last film count we warned about
         self._last_film_check = 0.0      # monotonic-ish time of last real BLE read
+        self.last_seen = None            # time of last successful printer contact
+        self.cancelled = set()           # cloud basenames cancelled from the queue
 
     # -- public API ---------------------------------------------------------
 
@@ -126,7 +128,17 @@ class PrinterWorker(threading.Thread):
                 "film_left": self.film_left,
                 "battery": self.battery,
                 "out_of_film": self.out_of_film,
+                # online = we actually talked to the printer recently; the
+                # idle keep-alive refreshes this every ~60s, so 3 min of
+                # silence means it's off/asleep and needs its power button.
+                "online": bool(self.last_seen and time.time() - self.last_seen < 180),
+                "last_seen": self.last_seen,
             }
+
+    def cancel_file(self, base):
+        """Skip this cloud job if it hasn't started printing yet."""
+        with self.lock:
+            self.cancelled.add(base)
 
     # -- worker loop --------------------------------------------------------
 
@@ -147,6 +159,13 @@ class PrinterWorker(threading.Thread):
                     self._query_film()
                 continue
             name = os.path.basename(src_path)
+            with self.lock:
+                was_cancelled = any(name.endswith(b) for b in self.cancelled)
+            if was_cancelled:
+                log.info("[%s] skipping cancelled job %s (stays in archive)",
+                         self.fmt, name)
+                self.jobs.task_done()
+                continue
             with self.lock:
                 self.current = name
             try:
@@ -215,6 +234,7 @@ class PrinterWorker(threading.Thread):
         with self.lock:
             self.film_left = film
             self.battery = battery
+            self.last_seen = time.time()
         self._last_film_check = time.time()
 
     def _warn_if_low(self):

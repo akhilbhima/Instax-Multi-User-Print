@@ -82,27 +82,31 @@ function filmLine(status) {
     return { text: "connecting to the printers…", oof: false };
   }
   const parts = [];
-  let anyOof = false;
+  let anyBad = false;
   for (const key of ["mini", "wide"]) {
     const p = status.agent[key];
     const label = key === "mini" ? "Mini" : "Wide";
     const cloudExtra = status.cloud_queue ? status.cloud_queue[key] || 0 : 0;
     if (!p) continue;
-    if (p.out_of_film) {
-      anyOof = true;
-      // Blobs now stay queued until printed, so the cloud count IS the
+    const batt = p.battery !== null && p.battery !== undefined ? ` · 🔋${p.battery}%` : "";
+    if (!p.online) {
+      anyBad = true;
+      parts.push(`🔴 ${label}: OFF — press its power button!`);
+    } else if (p.out_of_film) {
+      anyBad = true;
+      // Blobs stay queued until printed, so the cloud count IS the
       // full number of photos waiting.
-      parts.push(`${label}: OUT OF FILM (queue paused, ${cloudExtra} waiting)`);
+      parts.push(`🟡 ${label}: OUT OF FILM (queue paused, ${cloudExtra} waiting)${batt}`);
     } else if (p.film_left === null || p.film_left === undefined) {
-      parts.push(`${label}: ready`);
+      parts.push(`🟢 ${label}: ready${batt}`);
     } else {
-      parts.push(`${label}: ${p.film_left} print${p.film_left === 1 ? "" : "s"} left`);
+      parts.push(`🟢 ${label}: ${p.film_left} print${p.film_left === 1 ? "" : "s"} left${batt}`);
     }
   }
-  return { text: parts.join("  ·  "), oof: anyOof };
+  return { text: parts.join("   "), oof: anyBad };
 }
 
-function QueueGrid({ status }) {
+function QueueGrid({ status, onCancel }) {
   const sections = [];
   for (const key of ["mini", "wide"]) {
     const items = (status && status.queue && status.queue[key]) || [];
@@ -131,6 +135,18 @@ function QueueGrid({ status }) {
                               fontSize: "0.75rem", fontWeight: 700 }}>
                   {printing ? "printing" : `#${i + 1}`}
                 </div>
+                {!printing && (
+                  <button aria-label="cancel this photo"
+                          onClick={() => onCancel(item.pathname)}
+                          style={{ position: "absolute", top: 4, right: 4,
+                                   width: 24, height: 24, borderRadius: "50%",
+                                   border: "none", background: "rgba(0,0,0,0.7)",
+                                   color: "#ff5d8f", fontWeight: 800,
+                                   fontSize: "0.85rem", lineHeight: 1,
+                                   cursor: "pointer" }}>
+                    ✕
+                  </button>
+                )}
               </div>
             );
           })}
@@ -158,17 +174,28 @@ export default function Page() {
   const cameraRef = useRef(null);
   const busyRef = useRef(false); // double-tap guard: one upload per photo, ever
 
+  const loadStatus = () =>
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then(setStatus)
+      .catch(() => {});
+
   useEffect(() => {
-    let alive = true;
-    const load = () =>
-      fetch("/api/status")
-        .then((r) => r.json())
-        .then((s) => alive && setStatus(s))
-        .catch(() => {});
-    load();
-    const t = setInterval(load, 10000);
-    return () => { alive = false; clearInterval(t); };
+    loadStatus();
+    const t = setInterval(loadStatus, 10000);
+    return () => clearInterval(t);
   }, []);
+
+  async function cancelQueued(pathname) {
+    try {
+      await fetch("/api/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pathname }),
+      });
+    } catch {}
+    loadStatus();
+  }
 
   function onPick(e) {
     const f = e.target.files && e.target.files[0];
@@ -246,7 +273,7 @@ export default function Page() {
             )}
           </div>
           <div style={{ ...S.film, ...(film.oof ? S.oof : {}) }}>{film.text}</div>
-          {tab === "queue" && <QueueGrid status={status} />}
+          {tab === "queue" && <QueueGrid status={status} onCancel={cancelQueued} />}
           {tab === "print" && <>
 
           <button style={{ ...S.btn, background: "#ffb703", color: "#1c1a24" }}

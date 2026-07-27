@@ -100,7 +100,7 @@ def job_loop(secret, workers, printed):
     The printed-log guarantees a job is never printed twice, even across
     bridge restarts."""
     submitted = set()   # basenames handed to a worker by THIS process
-    pending = {}        # basename -> blob url, awaiting print confirmation
+    pending = {}        # basename -> {url, fmt, misses}, awaiting print confirmation
     while True:
         try:
             # 1) Clear finished work from the cloud queue.
@@ -109,7 +109,7 @@ def job_loop(secret, workers, printed):
                     base = cloud_base(h["file"])
                     if base and base in pending:
                         try:
-                            complete_job(secret, pending[base])
+                            complete_job(secret, pending[base]["url"])
                             mark_printed(base)
                             printed.add(base)
                             del pending[base]
@@ -120,7 +120,7 @@ def job_loop(secret, workers, printed):
             for base in list(pending):
                 if find_in_dir(config.FAILED_DIR, base):
                     try:
-                        complete_job(secret, pending[base])
+                        complete_job(secret, pending[base]["url"])
                         del pending[base]
                         log.info("failed %s — removed from cloud queue", base)
                     except Exception as e:
@@ -129,6 +129,21 @@ def job_loop(secret, workers, printed):
 
             # 2) Pull new jobs.
             resp = api(secret, "/api/agent/jobs")
+
+            # A pending job whose blob vanished (and that we didn't print or
+            # fail) was cancelled from the Queue tab. Require two consecutive
+            # misses so a briefly-inconsistent listing can't cancel anything.
+            cloud_bases = {os.path.basename(j["pathname"]) for j in resp.get("jobs", [])}
+            for base, info in list(pending.items()):
+                if base in cloud_bases:
+                    info["misses"] = 0
+                    continue
+                info["misses"] += 1
+                if info["misses"] >= 2:
+                    workers[info["fmt"]].cancel_file(base)
+                    del pending[base]
+                    log.info("guest cancelled %s — worker will skip it", base)
+
             for job in resp.get("jobs", []):
                 pathname = job["pathname"]           # queue/<fmt>/<stamp>-<rand>.jpg
                 base = os.path.basename(pathname)
@@ -145,7 +160,7 @@ def job_loop(secret, workers, printed):
                         pass
                     continue
                 if base in submitted:
-                    pending.setdefault(base, job["url"])
+                    pending.setdefault(base, {"url": job["url"], "fmt": fmt, "misses": 0})
                     continue
                 if find_in_dir(config.FAILED_DIR, base):
                     # Exhausted its retries in an earlier run — don't auto-retry;
@@ -168,7 +183,7 @@ def job_loop(secret, workers, printed):
                     # in the printed-log) — re-queue the local copy.
                     log.info("re-queueing %s from a previous run", base)
                 submitted.add(base)
-                pending[base] = job["url"]
+                pending[base] = {"url": job["url"], "fmt": fmt, "misses": 0}
                 position = workers[fmt].submit(local_path)
                 log.info("cloud job %s -> %s queue (position %d)",
                          pathname, fmt, position)
