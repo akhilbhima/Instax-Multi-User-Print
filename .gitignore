@@ -10,3 +10,4 @@ qr.png
 cloud/node_modules/
 cloud/.next/
 cloud/.vercel/
+.supabase-db-password

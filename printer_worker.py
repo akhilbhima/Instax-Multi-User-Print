@@ -24,8 +24,26 @@ from vendor_instaxble.InstaxBLE import InstaxBLE
 log = logging.getLogger("instax")
 
 # simplepyble shares one Bluetooth adapter between both workers; scanning from
-# two threads at once confuses it, so connects are serialized.
+# two threads at once confuses it, so connects are serialized. Acquired with a
+# timeout everywhere: if one operation wedges inside CoreBluetooth, the other
+# worker degrades to "printer offline" instead of deadlocking forever.
 _ble_lock = threading.Lock()
+BLE_LOCK_TIMEOUT = 120
+
+
+def _safe_disconnect(instax, fmt):
+    """disconnect() can hang inside CoreBluetooth; do it on a scrap thread so
+    a stuck disconnect never takes a worker down with it."""
+    def _d():
+        try:
+            instax.disconnect()
+        except Exception as e:
+            log.warning("[%s] error during disconnect: %s", fmt, e)
+    t = threading.Thread(target=_d, daemon=True, name=f"disconnect-{fmt}")
+    t.start()
+    t.join(timeout=10)
+    if t.is_alive():
+        log.warning("[%s] disconnect is hanging — abandoned it", fmt)
 
 
 # PRINTER_FUNCTION_INFO result codes (byte layout from paorin/InstaxLink,
@@ -68,6 +86,20 @@ class PacedInstaxBLE(InstaxBLE):
                 "err_type": unpack_from(">I", b, 12)[0],
             }
         super().notification_handler(packet)
+
+    def send_packet(self, packet):
+        # The stock library waits FOREVER for the previous packet's response;
+        # one lost notification wedges the worker thread for good (observed:
+        # both workers dead within minutes of a single lost reply). Bound the
+        # wait and unwedge — a lost reply becomes a failed/stalled operation
+        # that the normal retry machinery handles.
+        deadline = time.time() + 15
+        while self.waitingForResponse and not self.cancelled:
+            if time.time() > deadline:
+                self.waitingForResponse = False
+                break
+            time.sleep(0.05)
+        super().send_packet(packet)
 
 
 class PrintError(Exception):
@@ -304,13 +336,18 @@ class PrinterWorker(threading.Thread):
         # tight loop by the idle checker.
         self._last_film_check = time.time()
         instax = None
+        if not _ble_lock.acquire(timeout=BLE_LOCK_TIMEOUT):
+            log.warning("[%s] film check skipped: Bluetooth is stuck busy", self.fmt)
+            return None
         try:
-            with _ble_lock:
+            try:
                 try:
-                    instax = InstaxBLE(device_name=self.device_name, verbose=False)
+                    instax = PacedInstaxBLE(device_name=self.device_name, verbose=False)
                 except SystemExit:
                     return None
                 instax.connect(timeout=config.STATUS_CONNECT_TIMEOUT_SECONDS)
+            finally:
+                _ble_lock.release()
             if instax.peripheral and instax.peripheral.is_connected():
                 self._wait_for_printer_info(instax)
             if (not instax.peripheral or not instax.peripheral.is_connected()
@@ -329,10 +366,7 @@ class PrinterWorker(threading.Thread):
             return None
         finally:
             if instax is not None:
-                try:
-                    instax.disconnect()
-                except Exception:
-                    pass
+                _safe_disconnect(instax, self.fmt)
 
     def _wait_for_printer(self):
         """Queue paused: printer is off/asleep. Poll until it answers a
@@ -380,8 +414,10 @@ class PrinterWorker(threading.Thread):
     def _print_once(self, jpeg_bytes):
         """One full connect → transfer → print → disconnect cycle."""
         instax = None
+        if not _ble_lock.acquire(timeout=BLE_LOCK_TIMEOUT):
+            raise PrintError("Bluetooth is stuck busy — will retry")
         try:
-            with _ble_lock:
+            try:
                 # Constructor may sys.exit() if Bluetooth is off — surface that
                 # as a normal error instead of killing the thread.
                 try:
@@ -393,6 +429,8 @@ class PrinterWorker(threading.Thread):
                     instax.enable_printing()
                 log.info("[%s] connecting to %s ...", self.fmt, self.device_name)
                 instax.connect(timeout=config.CONNECT_TIMEOUT_SECONDS)
+            finally:
+                _ble_lock.release()
 
             if not instax.peripheral or not instax.peripheral.is_connected():
                 raise PrinterOfflineError(
@@ -482,10 +520,7 @@ class PrinterWorker(threading.Thread):
                              f"{config.PRINT_COMPLETE_TIMEOUT_SECONDS}s")
         finally:
             if instax is not None:
-                try:
-                    instax.disconnect()
-                except Exception as e:
-                    log.warning("[%s] error during disconnect: %s", self.fmt, e)
+                _safe_disconnect(instax, self.fmt)
 
     def _move_to_failed(self, src_path):
         try:

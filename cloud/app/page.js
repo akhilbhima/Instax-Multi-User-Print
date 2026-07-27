@@ -2,43 +2,159 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// New Mercy brand: fresh green + white + heavy black type
-const GREEN = "#8CC63E";
-const INK = "#111111";
+const CSS = `
+:root {
+  --green: #8CC63E;
+  --leaf: #4C7A1B;
+  --ink: #131512;
+  --mist: #6A716B;
+  --chalk: #F4F6F1;
+  --line: #E4E7E0;
+  --clay: #BF4430;
+}
+* { box-sizing: border-box; }
+.page {
+  font-family: var(--font-body), system-ui, sans-serif;
+  color: var(--ink);
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 28px 20px 40px;
+  text-align: center;
+}
+.step { width: 100%; max-width: 430px; }
 
-const S = {
-  body: {
-    fontFamily: "-apple-system, system-ui, sans-serif",
-    background: "#ffffff", color: INK, minHeight: "100vh",
-    display: "flex", flexDirection: "column", alignItems: "center",
-    justifyContent: "center", padding: 24, textAlign: "center",
-  },
-  step: { width: "100%", maxWidth: 420 },
-  h1: { fontSize: "1.7rem", margin: "0 0 6px", fontWeight: 800,
-        textTransform: "uppercase", letterSpacing: "-0.5px" },
-  sub: { color: "#6b6b6b", margin: "0 0 16px" },
-  film: { color: "#444", fontSize: "0.9rem", marginBottom: 24, minHeight: "1.2em" },
-  oof: { color: "#c0392b", fontWeight: 600 },
-  btn: {
-    display: "block", width: "100%", padding: 22, margin: "10px 0",
-    fontSize: "1.25rem", fontWeight: 800, border: "none", borderRadius: 16,
-    cursor: "pointer", WebkitTapHighlightColor: "transparent",
-  },
-  note: { fontSize: "0.85rem", fontWeight: 400, opacity: 0.8, display: "block", marginTop: 2 },
-  preview: { maxWidth: "70%", maxHeight: "32vh", borderRadius: 12, margin: "12px auto",
-             display: "block", border: "1px solid #e5e5e5" },
-  pos: {
-    fontSize: "2.6rem", fontWeight: 800, color: INK, background: GREEN,
-    width: 120, height: 120, borderRadius: "50%", display: "flex",
-    alignItems: "center", justifyContent: "center", margin: "12px auto",
-  },
-  err: { color: "#c0392b", marginTop: 12, minHeight: "1.2em" },
-  spinner: {
-    margin: "18px auto", width: 36, height: 36, borderRadius: "50%",
-    border: "4px solid #e5e5e5", borderTopColor: GREEN,
-    animation: "spin 0.8s linear infinite",
-  },
-};
+/* header */
+.eyebrow {
+  font-size: 0.72rem; letter-spacing: 0.28em; color: var(--leaf);
+  font-weight: 600; text-transform: uppercase; margin-bottom: 4px;
+}
+.title {
+  font-family: var(--font-display), sans-serif;
+  font-size: 2.1rem; line-height: 1; margin: 0 0 6px;
+  text-transform: uppercase; letter-spacing: 0.01em;
+}
+.title .dot { color: var(--green); }
+.sub { color: var(--mist); margin: 0 0 18px; font-size: 0.95rem; }
+
+/* printer status chips */
+.chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--chalk); border-radius: 999px;
+  padding: 7px 14px; font-size: 0.82rem; font-weight: 600; color: var(--ink);
+}
+.chip .led { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.led.ok { background: var(--green); }
+.led.warn { background: #E0A800; }
+.led.bad { background: var(--clay); }
+.led.dim { background: #C6CCC4; }
+.chip.trouble { color: var(--clay); }
+.batt { color: var(--mist); font-size: 0.74rem; margin: 6px 0 20px; min-height: 1em; }
+
+/* tabs */
+.tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+.tab {
+  padding: 8px 22px; border-radius: 999px; border: none; cursor: pointer;
+  font-family: var(--font-body), sans-serif; font-weight: 700; font-size: 0.9rem;
+  background: transparent; color: var(--mist); border: 2px solid var(--line);
+}
+.tab.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* buttons */
+.btn {
+  display: block; width: 100%; padding: 20px; margin: 10px 0;
+  font-family: var(--font-body), sans-serif;
+  font-size: 1.15rem; font-weight: 700; border: none; border-radius: 16px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease;
+}
+.btn:active { transform: scale(0.98); }
+.btn.primary { background: var(--green); color: var(--ink); }
+.btn.quiet { background: #fff; color: var(--ink); border: 2.5px solid var(--ink); }
+button:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
+
+/* instax frames — the signature */
+.frame {
+  background: #fff; border: 1px solid var(--line); border-radius: 4px;
+  box-shadow: 0 12px 28px rgba(19, 21, 18, 0.14);
+  padding: 7px 7px 0;
+}
+.frame img { display: block; width: 100%; border-radius: 2px; object-fit: cover; background: var(--chalk); }
+.frame .chin {
+  font-family: var(--font-display), sans-serif;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 7px 0 9px; font-size: 0.95rem;
+}
+
+/* format chooser: your photo inside each real print shape */
+.formats { display: flex; gap: 18px; align-items: flex-end; justify-content: center; margin: 22px 0 6px; }
+.format-btn { background: none; border: none; padding: 0; cursor: pointer; }
+.format-btn .frame { transition: transform 0.15s ease; }
+.format-btn.mini .frame { width: 138px; transform: rotate(-2deg); }
+.format-btn.wide .frame { width: 212px; transform: rotate(1.4deg); }
+.format-btn:hover .frame, .format-btn:focus-visible .frame { transform: rotate(0deg) translateY(-4px); }
+.format-btn.mini img { aspect-ratio: 3 / 4; }
+.format-btn.wide img { aspect-ratio: 3 / 2; }
+.format-note { color: var(--mist); font-size: 0.8rem; margin-top: 10px; }
+
+/* sending: a print ejecting from the slot */
+.eject-stage { height: 150px; width: 150px; margin: 26px auto 0; position: relative; overflow: hidden; }
+.eject-stage .frame { width: 108px; position: absolute; left: 21px; bottom: -8px;
+  animation: eject 1.5s ease-in-out infinite; }
+.eject-stage img { aspect-ratio: 3 / 4; }
+.slot { width: 190px; height: 14px; background: var(--ink); border-radius: 7px; margin: -4px auto 0; position: relative; z-index: 2; }
+@keyframes eject {
+  0% { transform: translateY(112%); }
+  70% { transform: translateY(12%); }
+  100% { transform: translateY(10%); }
+}
+
+/* done: the green circle stamp */
+.stamp {
+  width: 132px; height: 132px; border-radius: 50%; background: var(--green);
+  color: var(--ink); display: flex; align-items: center; justify-content: center;
+  margin: 16px auto 10px;
+  font-family: var(--font-display), sans-serif; font-size: 2.6rem;
+  animation: pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.done-note { color: var(--mist); margin: 6px 0 22px; }
+
+/* queue tab */
+.q-section { margin-bottom: 26px; }
+.q-head {
+  font-family: var(--font-display), sans-serif; text-transform: uppercase;
+  font-size: 1rem; letter-spacing: 0.06em; margin-bottom: 12px;
+}
+.q-head .count { color: var(--leaf); }
+.q-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.q-item { position: relative; }
+.q-item .frame { padding: 5px 5px 0; box-shadow: 0 6px 16px rgba(19, 21, 18, 0.12); }
+.q-item.mini .frame { width: 88px; } .q-item.mini img { aspect-ratio: 3 / 4; }
+.q-item.wide .frame { width: 126px; } .q-item.wide img { aspect-ratio: 3 / 2; }
+.q-item .chin { font-size: 0.72rem; padding: 4px 0 6px; }
+.q-item.printing .frame { outline: 3px solid var(--green); }
+.q-item.printing .chin { color: var(--leaf); }
+.q-cancel {
+  position: absolute; top: -8px; right: -8px; width: 26px; height: 26px;
+  border-radius: 50%; border: 2px solid #fff; background: var(--ink); color: #fff;
+  font-weight: 800; font-size: 0.8rem; line-height: 1; cursor: pointer;
+}
+.q-empty { color: var(--mist); font-size: 0.9rem; }
+.more { color: var(--mist); font-size: 0.85rem; margin-top: 10px; }
+
+/* history */
+.history { margin-top: 30px; border-top: 1px solid var(--line); padding-top: 16px; }
+.history .lead { font-weight: 700; margin-bottom: 6px; }
+.history .lead b { color: var(--leaf); }
+.history .row { color: var(--mist); font-size: 0.85rem; padding: 2px 0; }
+
+.err { color: var(--clay); margin-top: 12px; min-height: 1.2em; font-size: 0.9rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+`;
 
 // Downscale + JPEG-encode in the browser so uploads stay under the server's
 // 4 MB cap (phone photos are often 5-10 MB). 2000 px is far more than the
@@ -71,6 +187,33 @@ async function compressPhoto(file) {
   return file;
 }
 
+function printerChips(status) {
+  const chips = [];
+  const batts = [];
+  if (!status || !status.agent || status.agent.stale) {
+    return { chips: [{ led: "dim", text: "Connecting to the printers…" }], batt: "" };
+  }
+  for (const key of ["mini", "wide"]) {
+    const p = status.agent[key];
+    if (!p) continue;
+    const label = key === "mini" ? "Mini" : "Wide";
+    const cloudCount = status.cloud_queue ? status.cloud_queue[key] || 0 : 0;
+    if (!p.online) {
+      chips.push({ led: "bad", text: `${label} · off — press its power button`, trouble: true });
+    } else if (p.out_of_film) {
+      chips.push({ led: "warn", text: `${label} · out of film · ${cloudCount} waiting`, trouble: true });
+    } else if (p.film_left === null || p.film_left === undefined) {
+      chips.push({ led: "ok", text: `${label} · ready` });
+    } else {
+      chips.push({ led: "ok", text: `${label} · ${p.film_left} left` });
+    }
+    if (p.online && p.battery !== null && p.battery !== undefined) {
+      batts.push(`${label} ${p.battery}%`);
+    }
+  }
+  return { chips, batt: batts.length ? `battery ${batts.join(" · ")}` : "" };
+}
+
 function printHistory(status) {
   if (!status || !status.agent) return { total: 0, recent: [] };
   const rows = [];
@@ -84,36 +227,7 @@ function printHistory(status) {
     }
   }
   rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  return { total, recent: rows.slice(0, 8) };
-}
-
-function filmLine(status) {
-  if (!status || !status.agent || status.agent.stale) {
-    return { text: "connecting to the printers…", oof: false };
-  }
-  const parts = [];
-  let anyBad = false;
-  for (const key of ["mini", "wide"]) {
-    const p = status.agent[key];
-    const label = key === "mini" ? "Mini" : "Wide";
-    const cloudExtra = status.cloud_queue ? status.cloud_queue[key] || 0 : 0;
-    if (!p) continue;
-    const batt = p.battery !== null && p.battery !== undefined ? ` · 🔋${p.battery}%` : "";
-    if (!p.online) {
-      anyBad = true;
-      parts.push(`🔴 ${label}: OFF — press its power button!`);
-    } else if (p.out_of_film) {
-      anyBad = true;
-      // Blobs stay queued until printed, so the cloud count IS the
-      // full number of photos waiting.
-      parts.push(`🟡 ${label}: OUT OF FILM (queue paused, ${cloudExtra} waiting)${batt}`);
-    } else if (p.film_left === null || p.film_left === undefined) {
-      parts.push(`🟢 ${label}: ready${batt}`);
-    } else {
-      parts.push(`🟢 ${label}: ${p.film_left} print${p.film_left === 1 ? "" : "s"} left${batt}`);
-    }
-  }
-  return { text: parts.join("   "), oof: anyBad };
+  return { total, recent: rows.slice(0, 6) };
 }
 
 function QueueGrid({ status, onCancel }) {
@@ -123,49 +237,37 @@ function QueueGrid({ status, onCancel }) {
     const current = status && status.agent && !status.agent.stale
       ? (status.agent[key] || {}).current : null;
     sections.push(
-      <div key={key} style={{ marginBottom: 24 }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>
-          {key === "mini" ? "Mini" : "Wide"} queue
-          {items.length === 0 ? " — empty" : ` — ${items.length} waiting`}
+      <div key={key} className="q-section">
+        <div className="q-head">
+          {key === "mini" ? "Mini" : "Wide"}{" "}
+          {items.length > 0 && <span className="count">· {items.length} waiting</span>}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-          {items.slice(0, 12).map((item, i) => {
-            const base = item.pathname.split("/").pop();
-            const printing = i === 0 && current && current.endsWith(base);
-            return (
-              <div key={item.pathname} style={{ position: "relative" }}>
-                <img src={item.url} alt={`queued photo ${i + 1}`}
-                     style={{ width: 104, height: 104, objectFit: "cover",
-                              borderRadius: 10, display: "block",
-                              border: printing ? `3px solid ${GREEN}` : "1px solid #e0e0e0" }} />
-                <div style={{ position: "absolute", top: 4, left: 4,
-                              background: printing ? GREEN : INK,
-                              color: printing ? INK : "#fff",
-                              borderRadius: 6, padding: "1px 7px",
-                              fontSize: "0.75rem", fontWeight: 700 }}>
-                  {printing ? "printing" : `#${i + 1}`}
+        {items.length === 0 ? (
+          <div className="q-empty">Nothing waiting — your photo could be next.</div>
+        ) : (
+          <div className="q-grid">
+            {items.slice(0, 12).map((item, i) => {
+              const base = item.pathname.split("/").pop();
+              const printing = i === 0 && current && current.endsWith(base);
+              return (
+                <div key={item.pathname}
+                     className={`q-item ${key}${printing ? " printing" : ""}`}>
+                  <div className="frame">
+                    <img src={item.url} alt={`queued photo ${i + 1}`} />
+                    <div className="chin">{printing ? "printing…" : `#${i + 1}`}</div>
+                  </div>
+                  {!printing && (
+                    <button className="q-cancel" aria-label="cancel this photo"
+                            onClick={() => onCancel(item.pathname)}>
+                      ✕
+                    </button>
+                  )}
                 </div>
-                {!printing && (
-                  <button aria-label="cancel this photo"
-                          onClick={() => onCancel(item.pathname)}
-                          style={{ position: "absolute", top: 4, right: 4,
-                                   width: 24, height: 24, borderRadius: "50%",
-                                   border: "none", background: INK,
-                                   color: "#fff", fontWeight: 800,
-                                   fontSize: "0.85rem", lineHeight: 1,
-                                   cursor: "pointer" }}>
-                    ✕
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        {items.length > 12 && (
-          <div style={{ color: "#6b6b6b", fontSize: "0.85rem", marginTop: 6 }}>
-            +{items.length - 12} more
+              );
+            })}
           </div>
         )}
+        {items.length > 12 && <div className="more">+{items.length - 12} more</div>}
       </div>,
     );
   }
@@ -256,106 +358,121 @@ export default function Page() {
     setStep("pick");
   }
 
-  const film = filmLine(status);
+  const { chips, batt } = printerChips(status);
   const history = printHistory(status);
   const queueTotal = status && status.cloud_queue
     ? (status.cloud_queue.mini || 0) + (status.cloud_queue.wide || 0) : 0;
 
   return (
-    <div style={S.body}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div className="page">
+      <style>{CSS}</style>
+
+      <h1 className="title">Photo<span className="dot">·</span>Prints</h1>
 
       {step === "pick" && (
-        <div style={S.step}>
-          <h1 style={S.h1}>📸 NM Photoprints</h1>
-          <p style={S.sub}>Snap or pick a photo — it prints right here at the party!</p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 18 }}>
-            {[["print", "Print"], ["queue", `Queue${queueTotal ? ` (${queueTotal})` : ""}`]].map(
+        <div className="step">
+          <p className="sub">Take a photo, pick a size, grab your print.</p>
+
+          <div className="chips">
+            {chips.map((c, i) => (
+              <span key={i} className={`chip${c.trouble ? " trouble" : ""}`}>
+                <i className={`led ${c.led}`} />{c.text}
+              </span>
+            ))}
+          </div>
+          <div className="batt">{batt}</div>
+
+          <div className="tabs">
+            {[["print", "Print"], ["queue", `Queue${queueTotal ? ` · ${queueTotal}` : ""}`]].map(
               ([id, label]) => (
-                <button key={id} onClick={() => setTab(id)}
-                        style={{ padding: "8px 20px", borderRadius: 999,
-                                 border: tab === id ? "none" : "2px solid #e0e0e0",
-                                 fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
-                                 background: tab === id ? GREEN : "#ffffff",
-                                 color: tab === id ? INK : "#6b6b6b" }}>
+                <button key={id} className={`tab${tab === id ? " on" : ""}`}
+                        onClick={() => setTab(id)}>
                   {label}
                 </button>
               ),
             )}
           </div>
-          <div style={{ ...S.film, ...(film.oof ? S.oof : {}) }}>{film.text}</div>
+
           {tab === "queue" && <QueueGrid status={status} onCancel={cancelQueued} />}
-          {tab === "print" && <>
 
-          <button style={{ ...S.btn, background: GREEN, color: INK }}
-                  onClick={() => cameraRef.current && cameraRef.current.click()}>
-            📷 Take a Photo
-          </button>
-          <button style={{ ...S.btn, background: "#ffffff", color: INK,
-                           border: `3px solid ${INK}` }}
-                  onClick={() => inputRef.current && inputRef.current.click()}>
-            🖼 Choose from Library
-          </button>
-          {/* `capture` forces the camera; the second input omits it so the
-              photo-library picker opens instead */}
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment"
-                 style={{ display: "none" }} onChange={onPick} />
-          <input ref={inputRef} type="file" accept="image/*"
-                 style={{ display: "none" }} onChange={onPick} />
+          {tab === "print" && (
+            <>
+              <button className="btn primary"
+                      onClick={() => cameraRef.current && cameraRef.current.click()}>
+                Take a photo
+              </button>
+              <button className="btn quiet"
+                      onClick={() => inputRef.current && inputRef.current.click()}>
+                Choose from library
+              </button>
+              {/* `capture` forces the camera; the second input omits it so the
+                  photo-library picker opens instead */}
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment"
+                     style={{ display: "none" }} onChange={onPick} />
+              <input ref={inputRef} type="file" accept="image/*"
+                     style={{ display: "none" }} onChange={onPick} />
 
-          {history.total > 0 && (
-            <div style={{ marginTop: 28, color: "#6b6b6b", fontSize: "0.9rem" }}>
-              <div style={{ fontWeight: 800, color: INK, marginBottom: 6 }}>
-                🖨 {history.total} print{history.total === 1 ? "" : "s"} so far
-              </div>
-              {history.recent.map((h, i) => (
-                <div key={i} style={{ padding: "2px 0" }}>
-                  {h.at} · {h.label}
+              {history.total > 0 && (
+                <div className="history">
+                  <div className="lead">
+                    🖨 <b>{history.total}</b> print{history.total === 1 ? "" : "s"} so far tonight
+                  </div>
+                  {history.recent.map((h, i) => (
+                    <div key={i} className="row">{h.at} · {h.label}</div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
-          </>}
         </div>
       )}
 
       {step === "format" && (
-        <div style={S.step}>
-          <h1 style={S.h1}>Pick a print size</h1>
-          {previewUrl && <img src={previewUrl} alt="your photo" style={S.preview} />}
-          <button style={{ ...S.btn, background: GREEN, color: INK }}
-                  onClick={() => upload("mini")}>
-            Mini <span style={S.note}>small &amp; tall — classic instax</span>
-          </button>
-          <button style={{ ...S.btn, background: INK, color: "#fff" }}
-                  onClick={() => upload("wide")}>
-            Wide <span style={S.note}>big &amp; wide — group shots</span>
-          </button>
-          <div style={S.err}>{error}</div>
+        <div className="step">
+          <p className="sub">Pick your print — this is how each one crops.</p>
+          <div className="formats">
+            <button className="format-btn mini" onClick={() => upload("mini")}>
+              <div className="frame">
+                {previewUrl && <img src={previewUrl} alt="your photo as a Mini print" />}
+                <div className="chin">Mini</div>
+              </div>
+            </button>
+            <button className="format-btn wide" onClick={() => upload("wide")}>
+              <div className="frame">
+                {previewUrl && <img src={previewUrl} alt="your photo as a Wide print" />}
+                <div className="chin">Wide</div>
+              </div>
+            </button>
+          </div>
+          <div className="format-note">Tap a print to send it</div>
+          <div className="err">{error}</div>
         </div>
       )}
 
       {step === "sending" && (
-        <div style={S.step}>
-          <h1 style={S.h1}>Sending…</h1>
-          <div style={S.spinner} />
+        <div className="step">
+          <p className="sub">Sending to the printer…</p>
+          <div className="eject-stage">
+            <div className="frame">
+              {previewUrl && <img src={previewUrl} alt="" />}
+              <div className="chin">&nbsp;</div>
+            </div>
+          </div>
+          <div className="slot" />
         </div>
       )}
 
       {step === "done" && result && (
-        <div style={S.step}>
-          <h1 style={{ ...S.h1, fontSize: "1.5rem", margin: "0 0 8px" }}>🎉 In the queue!</h1>
-          <div style={S.pos}>#{result.position}</div>
-          <p style={{ color: "#6b6b6b", margin: "8px 0 20px" }}>
+        <div className="step">
+          <div className="stamp">{result.position === 1 ? "✓" : `#${result.position}`}</div>
+          <p className="done-note">
             {result.refilling
-              ? "Added to queue — this printer is being refilled, your photo will print shortly."
+              ? "Added to the queue — this printer is being refilled, your photo will print shortly."
               : result.position === 1
-                ? `Your photo is printing next on the ${result.format} printer!`
-                : `position in the ${result.format} printer queue — hang tight!`}
+                ? `Printing now on the ${result.format} printer — watch for it!`
+                : `You're #${result.position} in the ${result.format} queue — hang tight.`}
           </p>
-          <button style={{ ...S.btn, background: GREEN, color: INK }} onClick={reset}>
-            Print Another
-          </button>
+          <button className="btn primary" onClick={reset}>Print another photo</button>
         </div>
       )}
     </div>

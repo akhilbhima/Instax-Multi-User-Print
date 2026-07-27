@@ -32,6 +32,10 @@ PACKET_DELAY = {"mini": 0.05, "wide": 0.15}
 # --- Cloud mode (bridge.py) ---------------------------------------------------
 CLOUD_URL = "https://nm-photoprints.vercel.app"
 
+# --- Admin control room (served by bridge.py) ---------------------------------
+ADMIN_HOST = "127.0.0.1"   # set to "0.0.0.0" to open the control room to the LAN
+ADMIN_PORT = 8081
+
 # --- Server -------------------------------------------------------------------
 HOST = "0.0.0.0"
 PORT = 8080
