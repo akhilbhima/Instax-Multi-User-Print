@@ -1,4 +1,4 @@
-import { put, list } from "@vercel/blob";
+import { listObjects, putObject } from "../../../lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -28,12 +28,8 @@ export async function POST(request) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const rand = Math.random().toString(36).slice(2, 8);
   const key = `queue/${format}/${stamp}-${rand}.jpg`;
-  await put(key, body, {
-    access: "public",
-    addRandomSuffix: false,
-    contentType: "image/jpeg",
-  });
+  await putObject(key, body, "image/jpeg");
 
-  const { blobs } = await list({ prefix: `queue/${format}/` });
-  return Response.json({ ok: true, format, position: blobs.length });
+  const queued = await listObjects(`queue/${format}/`);
+  return Response.json({ ok: true, format, position: queued.length });
 }

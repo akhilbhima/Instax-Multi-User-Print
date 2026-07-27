@@ -89,9 +89,9 @@ def find_in_dir(directory, base):
     return None
 
 
-def complete_job(secret, url):
+def complete_job(secret, pathname):
     import json
-    api(secret, "/api/agent/complete", data=json.dumps({"url": url}).encode())
+    api(secret, "/api/agent/complete", data=json.dumps({"pathname": pathname}).encode())
 
 
 def job_loop(secret, workers, printed):
@@ -109,7 +109,7 @@ def job_loop(secret, workers, printed):
                     base = cloud_base(h["file"])
                     if base and base in pending:
                         try:
-                            complete_job(secret, pending[base]["url"])
+                            complete_job(secret, pending[base]["pathname"])
                             mark_printed(base)
                             printed.add(base)
                             del pending[base]
@@ -120,7 +120,7 @@ def job_loop(secret, workers, printed):
             for base in list(pending):
                 if find_in_dir(config.FAILED_DIR, base):
                     try:
-                        complete_job(secret, pending[base]["url"])
+                        complete_job(secret, pending[base]["pathname"])
                         del pending[base]
                         log.info("failed %s — removed from cloud queue", base)
                     except Exception as e:
@@ -155,18 +155,18 @@ def job_loop(secret, workers, printed):
                 if base in printed:
                     # Printed before a crash/restart; just clean up the blob.
                     try:
-                        complete_job(secret, job["url"])
+                        complete_job(secret, job["pathname"])
                     except Exception:
                         pass
                     continue
                 if base in submitted:
-                    pending.setdefault(base, {"url": job["url"], "fmt": fmt, "misses": 0})
+                    pending.setdefault(base, {"pathname": job["pathname"], "fmt": fmt, "misses": 0})
                     continue
                 if find_in_dir(config.FAILED_DIR, base):
                     # Exhausted its retries in an earlier run — don't auto-retry;
                     # the operator can re-upload it deliberately.
                     try:
-                        complete_job(secret, job["url"])
+                        complete_job(secret, job["pathname"])
                         log.info("cleared previously-failed %s from cloud queue", base)
                     except Exception:
                         pass
@@ -183,7 +183,7 @@ def job_loop(secret, workers, printed):
                     # in the printed-log) — re-queue the local copy.
                     log.info("re-queueing %s from a previous run", base)
                 submitted.add(base)
-                pending[base] = {"url": job["url"], "fmt": fmt, "misses": 0}
+                pending[base] = {"pathname": job["pathname"], "fmt": fmt, "misses": 0}
                 position = workers[fmt].submit(local_path)
                 log.info("cloud job %s -> %s queue (position %d)",
                          pathname, fmt, position)

@@ -1,4 +1,4 @@
-import { list } from "@vercel/blob";
+import { listObjects } from "../../../../lib/store";
 import { agentAuthorized } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -8,9 +8,12 @@ export async function GET(request) {
   if (!agentAuthorized(request)) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  const { blobs } = await list({ prefix: "queue/" });
-  const jobs = blobs
-    .map((b) => ({ pathname: b.pathname, url: b.url, uploadedAt: b.uploadedAt }))
-    .sort((a, b) => a.pathname.localeCompare(b.pathname));
+  const [mini, wide] = await Promise.all([
+    listObjects("queue/mini/"),
+    listObjects("queue/wide/"),
+  ]);
+  const jobs = [...mini, ...wide].sort((a, b) =>
+    a.pathname.split("/").pop().localeCompare(b.pathname.split("/").pop()),
+  );
   return Response.json({ ok: true, jobs });
 }

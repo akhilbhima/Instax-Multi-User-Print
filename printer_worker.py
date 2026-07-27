@@ -36,6 +36,12 @@ class OutOfFilmError(PrintError):
     pass
 
 
+class PrinterOfflineError(PrintError):
+    """Printer not advertising/connectable — off or asleep. Queue should
+    pause and wait for it, not fail photos."""
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Image pipeline
 # ---------------------------------------------------------------------------
@@ -179,6 +185,8 @@ class PrinterWorker(threading.Thread):
                         break
                     except OutOfFilmError:
                         self._wait_for_film()
+                    except PrinterOfflineError:
+                        self._wait_for_printer()
                 with self.lock:
                     self.printed_count += 1
                     self.printed.append(name)
@@ -213,8 +221,8 @@ class PrinterWorker(threading.Thread):
             try:
                 self._print_once(jpeg_bytes)
                 return
-            except OutOfFilmError:
-                raise   # not a transient error — handled by the pause loop
+            except (OutOfFilmError, PrinterOfflineError):
+                raise   # not transient errors — handled by the pause loops
             except Exception as e:
                 last_exc = e
         raise PrintError(f"all {config.RETRIES + 1} attempts failed: {last_exc}")
@@ -284,6 +292,23 @@ class PrinterWorker(threading.Thread):
                 except Exception:
                     pass
 
+    def _wait_for_printer(self):
+        """Queue paused: printer is off/asleep. Poll until it answers a
+        status check (someone pressed its power button), then resume."""
+        with self.lock:
+            waiting = self.jobs.qsize() + 1
+        log.warning("=" * 60)
+        log.warning("[%s] 🔴 PRINTER OFFLINE — queue PAUSED (%d photo%s waiting).",
+                    self.fmt, waiting, "" if waiting == 1 else "s")
+        log.warning("[%s] Press the printer's power button; printing auto-resumes.",
+                    self.fmt)
+        log.warning("=" * 60)
+        while True:
+            time.sleep(config.FILM_RECHECK_SECONDS)
+            if self._query_film() is not None:
+                log.warning("[%s] 🟢 PRINTER BACK ONLINE — resuming queue.", self.fmt)
+                return
+
     def _wait_for_film(self):
         """Queue is paused: poll the printer until new film is detected."""
         with self.lock:
@@ -327,8 +352,9 @@ class PrinterWorker(threading.Thread):
                 instax.connect(timeout=config.CONNECT_TIMEOUT_SECONDS)
 
             if not instax.peripheral or not instax.peripheral.is_connected():
-                raise PrintError(f"printer {self.device_name} not found/connected "
-                                 f"within {config.CONNECT_TIMEOUT_SECONDS}s (is it on?)")
+                raise PrinterOfflineError(
+                    f"printer {self.device_name} not found within "
+                    f"{config.CONNECT_TIMEOUT_SECONDS}s — off or asleep")
             self._wait_for_printer_info(instax)
             if instax.printerSettings is None:
                 # Printer never answered the info request; connection is bad.

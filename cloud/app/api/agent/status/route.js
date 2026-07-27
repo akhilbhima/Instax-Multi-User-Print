@@ -1,32 +1,21 @@
-import { put, del, list } from "@vercel/blob";
+import { putObject } from "../../../../lib/store";
 import { agentAuthorized } from "../../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// The Mac bridge pushes printer status (film, battery, queues) every ~15 s.
-// Each push writes a new pathname so the guest page never reads a CDN-cached
-// stale copy; older reports are cleaned up after.
+// The Mac bridge pushes printer status every ~15 s. Single overwritten
+// object; /api/status reads it server-side so CDN caching never applies.
 export async function POST(request) {
   if (!agentAuthorized(request)) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  const body = await request.text();
+  let payload;
   try {
-    JSON.parse(body);
+    payload = JSON.parse(await request.text());
   } catch {
     return Response.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-
-  const key = `status/${Date.now()}.json`;
-  await put(key, body, {
-    access: "public",
-    addRandomSuffix: false,
-    contentType: "application/json",
-  });
-
-  const { blobs } = await list({ prefix: "status/" });
-  await Promise.all(
-    blobs.filter((b) => b.pathname !== key).map((b) => del(b.url).catch(() => {})),
-  );
+  payload.reported_at = new Date().toISOString();
+  await putObject("status/current.json", JSON.stringify(payload), "application/json");
   return Response.json({ ok: true });
 }
