@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>Printer Status</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #1c1a24;
+         color: #fff; padding: 24px; max-width: 640px; margin: 0 auto; }
+  h1 { margin-bottom: 4px; }
+  p.sub { color: #b9b4c7; margin: 0 0 20px; }
+  .card { background: #2a2735; border-radius: 14px; padding: 18px 20px; margin: 14px 0; }
+  .card h2 { margin: 0 0 10px; text-transform: capitalize; }
+  .row { display: flex; justify-content: space-between; padding: 3px 0; color: #d9d4e7; }
+  .row b { color: #fff; }
+  .err { color: #ff5d8f; margin-top: 8px; font-size: 0.9rem; }
+  .oof-banner { background: #ff5d8f; color: #fff; font-weight: 700;
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+  .low { color: #ffb703; font-weight: 700; }
+  ul { margin: 6px 0 0 18px; color: #b9b4c7; font-size: 0.9rem; }
+  .current { color: #ffb703; }
+</style>
+</head>
+<body>
+  <h1>🖨 Printer Status</h1>
+  <p class="sub">auto-refreshes every 5 seconds</p>
+  {% for s in statuses %}
+  <div class="card">
+    <h2>{{ s.format }} printer</h2>
+    {% if s.out_of_film %}
+      <div class="oof-banner">🟥 OUT OF FILM — queue paused, {{ s.waiting }}
+        waiting. Reload film to auto-resume.</div>
+    {% endif %}
+    <div class="row"><span>Film left</span>
+      {% if s.out_of_film %}<b class="low">0</b>
+      {% elif s.film_left is none %}<b>—</b>
+      {% elif s.film_left <= 2 %}<b class="low">{{ s.film_left }} (refill soon!)</b>
+      {% else %}<b>{{ s.film_left }}</b>{% endif %}</div>
+    <div class="row"><span>Battery</span>
+      <b>{{ s.battery ~ "%" if s.battery is not none else "—" }}</b></div>
+    <div class="row"><span>In queue</span><b>{{ s.queued }}</b></div>
+    <div class="row"><span>Printing now</span>
+      <b class="current">{{ s.current or "—" }}</b></div>
+    <div class="row"><span>Printed</span><b>{{ s.printed_count }}</b></div>
+    <div class="row"><span>Failed</span><b>{{ s.failed_count }}</b></div>
+    {% if s.last_printed %}
+      <div class="row"><span>Last printed</span></div>
+      <ul>{% for f in s.last_printed | reverse %}<li>{{ f }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if s.last_error %}<div class="err">Last error: {{ s.last_error }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</body>
+</html>
