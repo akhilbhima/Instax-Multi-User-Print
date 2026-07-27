@@ -1,9 +1,16 @@
 # instax-party-printer
 
 Guests at your event scan a QR code, upload a photo from their phone browser,
-and it auto-prints on one of two Fujifilm Instax Bluetooth printers. Runs
-fully offline on a MacBook joined to a phone hotspot — no internet, no app,
-no login.
+and it auto-prints on one of two Fujifilm Instax Bluetooth printers.
+
+Two ways to run it:
+
+- **Cloud mode (recommended):** guests use https://nm-photoprints.vercel.app
+  from any network. Uploads land in Vercel Blob; `bridge.py` on the MacBook
+  pulls them down, prints them, and pushes live film/queue status back so the
+  page shows "Mini: 4 prints left · Wide: OUT OF FILM". See *Cloud mode* below.
+- **Offline mode:** `app.py` hosts the page locally on a phone hotspot —
+  no internet needed at all.
 
 - **Mini** queue → Instax Mini Link 3 (600×800 portrait)
 - **Wide** queue → Instax Link Wide (1260×840 landscape)
@@ -73,7 +80,36 @@ under 100 KB) and prints it over Bluetooth LE using the vendored
 
    The `(IOS)` suffix is optional — matching is by prefix.
 
-## Run it
+## Cloud mode (nm-photoprints.vercel.app)
+
+The cloud app lives in `cloud/` (Next.js + Vercel Blob, project
+`nm-photoprints` on Vercel). The guest page compresses photos in the browser
+(~2000 px JPEG) before uploading, so uploads are fast and stay under Vercel's
+4 MB request cap.
+
+To run an event:
+
+1. Do the one-time setup above (steps 1–5), so printer names are in
+   `config.py`.
+2. Make sure the Mac has internet and Bluetooth on, printers on, then:
+
+   ```bash
+   source venv/bin/activate
+   python bridge.py
+   ```
+
+3. Guests open **https://nm-photoprints.vercel.app** — QR it, AirDrop it,
+   put it on a screen. The page shows live film counts and queue state.
+
+The bridge authenticates with the secret in `.agent-secret` (git-ignored),
+which must match the `AGENT_SECRET` env var on the Vercel project. To
+redeploy the cloud app after changes: `cd cloud && vercel deploy --prod`.
+
+If the Mac bridge is offline, guests can still upload — jobs wait safely in
+the cloud queue and print as soon as `bridge.py` comes back. The page shows
+"connecting to the printers…" until the bridge's first status report.
+
+## Offline mode (local hotspot)
 
 1. Connect the MacBook's Wi-Fi to the **phone hotspot** you'll use at the
    event (guests join the same hotspot).

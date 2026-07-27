@@ -5,3 +5,7 @@ photos/*
 !photos/.gitkeep
 qr.png
 .DS_Store
+.agent-secret
+cloud/node_modules/
+cloud/.next/
+cloud/.vercel/

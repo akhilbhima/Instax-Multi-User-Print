@@ -25,6 +25,9 @@ AUTO_ROTATE_TO_FIT = True
 # InstaxBLE itself caps at 105 KB, we stay safely under that.
 MAX_IMAGE_KB = 100
 
+# --- Cloud mode (bridge.py) ---------------------------------------------------
+CLOUD_URL = "https://nm-photoprints.vercel.app"
+
 # --- Server -------------------------------------------------------------------
 HOST = "0.0.0.0"
 PORT = 8080
